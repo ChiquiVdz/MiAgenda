@@ -1,0 +1,10 @@
+node_modules/
+.next/
+src/generated/prisma/
+out/
+build/
+.env*
+!.env.example
+.vercel/
+*.tsbuildinfo
+.npm-cache/

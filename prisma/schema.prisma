@@ -1,0 +1,331 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                    String    @id @default(cuid())
+  name                  String?
+  email                 String?   @unique
+  emailVerified         DateTime? @map("email_verified")
+  image                 String?
+  googleSub             String?   @unique @map("google_sub")
+  encryptedRefreshToken String?   @map("encrypted_refresh_token") @db.Text
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  mealSlotsInitialized  Boolean   @default(false) @map("meal_slots_initialized")
+
+  accounts              Account[]
+  sessions              Session[]
+  calendarSubscriptions CalendarSubscription[]
+  eventOverlays         EventOverlay[]
+  customIngredients     Ingredient[]
+  pantryItems           PantryItem[]
+  recipes               Recipe[]
+  mealPlans             MealPlan[]
+  mealSlots             MealSlot[]
+  shoppingLists         ShoppingList[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model CalendarSubscription {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  googleCalendarId String   @map("google_calendar_id")
+  summarySnapshot  String?  @map("summary_snapshot")
+  color            String?
+  selected         Boolean  @default(true)
+  isMeals          Boolean  @default(false) @map("is_meals")
+  syncToken        String?  @map("sync_token") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, googleCalendarId])
+  @@index([userId, selected])
+  @@map("calendar_subscriptions")
+}
+
+enum EventKind {
+  plain
+  app_task
+  meal
+
+  @@map("event_kind")
+}
+
+model EventOverlay {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  googleCalendarId String    @map("google_calendar_id")
+  googleEventId    String    @map("google_event_id")
+  recurringEventId String?   @map("recurring_event_id")
+  etag             String?
+  completedAt      DateTime? @map("completed_at")
+  keep             Boolean   @default(false)
+  kind             EventKind @default(plain)
+  purgeAfter       DateTime? @map("purge_after")
+  purgeStartedAt   DateTime? @map("purge_started_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  mealPlan         MealPlan?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, googleCalendarId, googleEventId])
+  @@index([userId, purgeAfter])
+  @@index([purgeAfter, purgeStartedAt])
+  @@map("event_overlays")
+}
+
+enum IngredientUnit {
+  g
+  kg
+  ml
+  l
+  piece
+
+  @@map("ingredient_unit")
+}
+
+model Ingredient {
+  id             String         @id @default(cuid())
+  ownerUserId    String?        @map("owner_user_id")
+  catalogScope   String         @map("catalog_scope") @db.VarChar(30)
+  name           String         @db.VarChar(100)
+  normalizedName String         @map("normalized_name") @db.VarChar(100)
+  unit           IngredientUnit
+  isBuiltin      Boolean        @default(false) @map("is_builtin")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  owner             User?              @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  pantryItems       PantryItem[]
+  recipeIngredients RecipeIngredient[]
+  mealPlanIngredients MealPlanIngredient[]
+  inventoryLedger   InventoryLedger[]
+  shoppingListItems ShoppingListItem[]
+
+  @@unique([catalogScope, normalizedName])
+  @@index([ownerUserId, name])
+  @@map("ingredients")
+}
+
+model PantryItem {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  ingredientId String   @map("ingredient_id")
+  quantity     Decimal  @db.Decimal(12, 3)
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ingredientId])
+  @@index([userId])
+  @@map("pantry_items")
+}
+
+model Recipe {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  name            String   @db.VarChar(150)
+  instructions    String   @db.Text
+  servings        Int      @default(2)
+  durationMinutes Int      @default(45) @map("duration_minutes")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredients RecipeIngredient[]
+  mealPlans   MealPlan[]
+  shoppingLists ShoppingList[]
+
+  @@index([userId, name])
+  @@map("recipes")
+}
+
+model RecipeIngredient {
+  id                 String  @id @default(cuid())
+  recipeId           String  @map("recipe_id")
+  ingredientId       String  @map("ingredient_id")
+  quantityPerServing Decimal @map("quantity_per_serving") @db.Decimal(12, 3)
+  equivalent         String? @db.VarChar(120)
+
+  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([recipeId, ingredientId])
+  @@index([ingredientId])
+  @@map("recipe_ingredients")
+}
+
+model MealPlan {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  recipeId         String?   @map("recipe_id")
+  overlayId        String    @unique @map("overlay_id")
+  mealSlotId       String?   @map("meal_slot_id")
+  googleCalendarId String    @map("google_calendar_id")
+  googleEventId    String    @map("google_event_id")
+  idempotencyKey   String    @map("idempotency_key") @db.VarChar(100)
+  servings         Int
+  durationMinutes  Int       @map("duration_minutes")
+  completedAt      DateTime? @map("completed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe      Recipe?              @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  overlay     EventOverlay         @relation(fields: [overlayId], references: [id], onDelete: Cascade)
+  mealSlot    MealSlot?            @relation(fields: [mealSlotId], references: [id], onDelete: SetNull)
+  ingredients MealPlanIngredient[]
+  ledger      InventoryLedger[]
+
+  @@unique([userId, googleCalendarId, googleEventId])
+  @@unique([userId, idempotencyKey])
+  @@index([userId, completedAt])
+  @@map("meal_plans")
+}
+
+model MealSlot {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  name       String   @db.VarChar(60)
+  defaultTime String  @map("default_time") @db.VarChar(5)
+  position   Int
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mealPlans MealPlan[]
+
+  @@index([userId, position])
+  @@map("meal_slots")
+}
+
+model MealPlanIngredient {
+  id               String         @id @default(cuid())
+  mealPlanId       String         @map("meal_plan_id")
+  ingredientId     String         @map("ingredient_id")
+  nameSnapshot     String         @map("name_snapshot") @db.VarChar(100)
+  unit             IngredientUnit
+  requiredQuantity Decimal        @map("required_quantity") @db.Decimal(12, 3)
+
+  mealPlan   MealPlan   @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([mealPlanId, ingredientId])
+  @@index([ingredientId])
+  @@map("meal_plan_ingredients")
+}
+
+model InventoryLedger {
+  id           String          @id @default(cuid())
+  mealPlanId   String          @map("meal_plan_id")
+  ingredientId String          @map("ingredient_id")
+  delta        Decimal         @db.Decimal(12, 3)
+  unit         IngredientUnit
+  reversalOfId String?         @unique @map("reversal_of_id")
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  mealPlan   MealPlan          @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  ingredient Ingredient       @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  reversalOf InventoryLedger?  @relation("InventoryLedgerReversal", fields: [reversalOfId], references: [id], onDelete: Cascade)
+  reversals  InventoryLedger[] @relation("InventoryLedgerReversal")
+
+  @@index([mealPlanId, createdAt])
+  @@map("inventory_ledger")
+}
+
+model ShoppingList {
+  id                 String   @id @default(cuid())
+  userId             String   @map("user_id")
+  recipeId           String?  @map("recipe_id")
+  recipeNameSnapshot String   @map("recipe_name_snapshot") @db.VarChar(150)
+  servings           Int
+  rangeStart         DateTime? @map("range_start")
+  rangeEnd           DateTime? @map("range_end")
+  idempotencyKey     String   @map("idempotency_key") @db.VarChar(100)
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe  Recipe?            @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  items   ShoppingListItem[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([userId, rangeStart, rangeEnd])
+  @@map("shopping_lists")
+}
+
+model ShoppingListItem {
+  id               String         @id @default(cuid())
+  shoppingListId   String         @map("shopping_list_id")
+  itemKey          String         @map("item_key") @db.VarChar(140)
+  ingredientId     String?        @map("ingredient_id")
+  nameSnapshot     String         @map("name_snapshot") @db.VarChar(100)
+  unit             IngredientUnit?
+  customUnit       String?        @map("custom_unit") @db.VarChar(20)
+  quantity         Decimal        @db.Decimal(12, 3)
+  purchasedQuantity Decimal?      @map("purchased_quantity") @db.Decimal(12, 3)
+  purchasedAt      DateTime?      @map("purchased_at")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  shoppingList ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient?  @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([shoppingListId, ingredientId])
+  @@unique([shoppingListId, itemKey])
+  @@index([ingredientId])
+  @@map("shopping_list_items")
+}
