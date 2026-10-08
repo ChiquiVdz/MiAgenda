@@ -1,0 +1,10 @@
+{
+  "name": "miagenda-core-reconstruction",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "prisma generate --config prisma.config.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "migrate": "prisma migrate deploy --config deploy.config.ts"
+  }
+}

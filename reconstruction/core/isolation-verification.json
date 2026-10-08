@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-07T18:04:13.629Z",
+  "passed": [
+    "Esquema temporal creado con migraciones reales",
+    "SQL sin calificar y Prisma comparten solo los usuarios de prueba",
+    "Acceso encuentra sesión y propietario",
+    "Acceso no depende del search_path compartido"
+  ],
+  "failure": null,
+  "temporarySchemaRemoved": true
+}

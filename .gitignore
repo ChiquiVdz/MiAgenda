@@ -8,3 +8,6 @@ build/
 .vercel/
 *.tsbuildinfo
 .npm-cache/
+# Capturas de uso local: pueden mostrar datos personales.
+/docs/evidencia/
+/docs/revision-integral-compras.jpg

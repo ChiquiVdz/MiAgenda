@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.git/
+.npm-cache/
+.env*
+reconstruction/**/.env*
+reconstruction/core/generated/
+reconstruction/legacy-reference/
+docs/
+*.tsbuildinfo
+*.log

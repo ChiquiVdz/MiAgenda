@@ -1,0 +1,18 @@
+{
+  "source": "docs/schema.objetivo.prisma",
+  "sourceSha256": "4143360204ac4742c9f313c578546f2713ccf09da76ef9cfd311327f37cd23d5",
+  "schemaSha256": "e1036fa8df472b5dbfa141642b9b05d9b0684a93d79e941e489dd68f0357198c",
+  "migrationSha256": "8e8c3b0c841039873629c23cff6886444b6c566e922dfc21acb1b332bb57aae7",
+  "tables": [
+    "User",
+    "Account",
+    "Session",
+    "VerificationToken",
+    "Calendar",
+    "CalendarPreference",
+    "Activity",
+    "ActivitySchedule",
+    "CommandReceipt"
+  ],
+  "validation": "prisma validate passed; SQL generated offline; installation tracked separately in installation.json"
+}

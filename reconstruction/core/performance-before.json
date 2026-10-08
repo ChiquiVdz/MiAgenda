@@ -1,0 +1,173 @@
+{
+  "measuredAt": "2026-10-06T15:04:13.424Z",
+  "samples": [
+    {
+      "round": 1,
+      "view": "inbox",
+      "ms": 1765,
+      "queries": 21,
+      "databaseMs": 5583.898399999997,
+      "bytes": 382
+    },
+    {
+      "round": 1,
+      "view": "calendars",
+      "ms": 458,
+      "queries": 4,
+      "databaseMs": 294.41209999999865,
+      "bytes": 314
+    },
+    {
+      "round": 1,
+      "view": "agenda",
+      "ms": 2259,
+      "queries": 28,
+      "databaseMs": 5968.127699999997,
+      "bytes": 11753
+    },
+    {
+      "round": 1,
+      "view": "pantry",
+      "ms": 1245,
+      "queries": 15,
+      "databaseMs": 2535.3297999999977,
+      "bytes": 12175
+    },
+    {
+      "round": 1,
+      "view": "recipes",
+      "ms": 504,
+      "queries": 5,
+      "databaseMs": 357.84780000000137,
+      "bytes": 3980
+    },
+    {
+      "round": 1,
+      "view": "planner",
+      "ms": 3950,
+      "queries": 52,
+      "databaseMs": 16435.2488,
+      "bytes": 28129
+    },
+    {
+      "round": 1,
+      "view": "shopping",
+      "ms": 796,
+      "queries": 9,
+      "databaseMs": 646.2521999999972,
+      "bytes": 2460
+    },
+    {
+      "round": 2,
+      "view": "inbox",
+      "ms": 1628,
+      "queries": 21,
+      "databaseMs": 5220.272499999999,
+      "bytes": 382
+    },
+    {
+      "round": 2,
+      "view": "calendars",
+      "ms": 425,
+      "queries": 4,
+      "databaseMs": 282.4398999999976,
+      "bytes": 314
+    },
+    {
+      "round": 2,
+      "view": "agenda",
+      "ms": 2131,
+      "queries": 28,
+      "databaseMs": 5881.086300000003,
+      "bytes": 11753
+    },
+    {
+      "round": 2,
+      "view": "pantry",
+      "ms": 1202,
+      "queries": 15,
+      "databaseMs": 2464.695200000002,
+      "bytes": 12175
+    },
+    {
+      "round": 2,
+      "view": "recipes",
+      "ms": 495,
+      "queries": 5,
+      "databaseMs": 353.4313000000002,
+      "bytes": 3980
+    },
+    {
+      "round": 2,
+      "view": "planner",
+      "ms": 3830,
+      "queries": 52,
+      "databaseMs": 16246.760899999997,
+      "bytes": 28129
+    },
+    {
+      "round": 2,
+      "view": "shopping",
+      "ms": 785,
+      "queries": 9,
+      "databaseMs": 639.8978999999963,
+      "bytes": 2460
+    },
+    {
+      "round": 3,
+      "view": "inbox",
+      "ms": 1626,
+      "queries": 21,
+      "databaseMs": 5236.0841,
+      "bytes": 382
+    },
+    {
+      "round": 3,
+      "view": "calendars",
+      "ms": 423,
+      "queries": 4,
+      "databaseMs": 280.82930000000124,
+      "bytes": 314
+    },
+    {
+      "round": 3,
+      "view": "agenda",
+      "ms": 2150,
+      "queries": 28,
+      "databaseMs": 5885.603000000003,
+      "bytes": 11753
+    },
+    {
+      "round": 3,
+      "view": "pantry",
+      "ms": 1204,
+      "queries": 15,
+      "databaseMs": 2472.6164000000063,
+      "bytes": 12175
+    },
+    {
+      "round": 3,
+      "view": "recipes",
+      "ms": 496,
+      "queries": 5,
+      "databaseMs": 353.55819999998494,
+      "bytes": 3980
+    },
+    {
+      "round": 3,
+      "view": "planner",
+      "ms": 3827,
+      "queries": 52,
+      "databaseMs": 16291.513399999996,
+      "bytes": 28129
+    },
+    {
+      "round": 3,
+      "view": "shopping",
+      "ms": 780,
+      "queries": 9,
+      "databaseMs": 636.3148000000001,
+      "bytes": 2460
+    }
+  ]
+}

@@ -1,0 +1,342 @@
+{
+  "measuredAt": "2026-10-06T17:39:54.766Z",
+  "dataChangedDuringRun": false,
+  "samples": [
+    {
+      "round": 1,
+      "view": "session",
+      "ms": 72,
+      "queries": 1,
+      "bytes": null,
+      "digest": null
+    },
+    {
+      "round": 1,
+      "view": "inbox",
+      "ms": 714,
+      "queries": 8,
+      "bytes": 382,
+      "digest": "d63a4e781be6f201302e1e614d85eeceb7c9172057cea5302c249964526fefd6"
+    },
+    {
+      "round": 1,
+      "view": "calendars",
+      "ms": 426,
+      "queries": 4,
+      "bytes": 314,
+      "digest": "2cbebfb656409dbcd573eaf3e498b6c4bbeedc1cf5be5012dce48f478458770d"
+    },
+    {
+      "round": 1,
+      "view": "agenda-day",
+      "ms": 1584,
+      "queries": 20,
+      "bytes": 3429,
+      "digest": "bfc431b37a026db302170cae95cbff5304471075202000bcc0fa9b4088c4383d"
+    },
+    {
+      "round": 1,
+      "view": "agenda-week",
+      "ms": 1537,
+      "queries": 20,
+      "bytes": 11753,
+      "digest": "506d5ffcebffe7d474a072a26864d8a426932b91ad65f231b97555676a6663f2"
+    },
+    {
+      "round": 1,
+      "view": "agenda-month",
+      "ms": 1614,
+      "queries": 21,
+      "bytes": 17273,
+      "digest": "ce9197344917485b84022a37098b175e019e9b1f3d846eb6444b9aaca8380be9"
+    },
+    {
+      "round": 1,
+      "view": "agenda-year",
+      "ms": 767,
+      "queries": 9,
+      "bytes": 928,
+      "digest": "5e2f7e27f3d9e354c3d597f16420437317c43de80676e14b9d15bca54c805638"
+    },
+    {
+      "round": 1,
+      "view": "pantry",
+      "ms": 440,
+      "queries": 4,
+      "bytes": 12175,
+      "digest": "42d23054f71444764a9d84a4cb65bdb94658434b64513a5ab9ca23c7888dec09"
+    },
+    {
+      "round": 1,
+      "view": "recipes",
+      "ms": 488,
+      "queries": 5,
+      "bytes": 3980,
+      "digest": "53825c272d974c725098bc5df39c4f0f6cc7c26474e8950128db35c1796f99d9"
+    },
+    {
+      "round": 1,
+      "view": "planner-week",
+      "ms": 1972,
+      "queries": 26,
+      "bytes": 28472,
+      "digest": "3059eb3efe3b9e42a6dcc242a869411afe7c07fb094399fa959d7f944d1069e9"
+    },
+    {
+      "round": 1,
+      "view": "planner-fortnight",
+      "ms": 1960,
+      "queries": 26,
+      "bytes": 28473,
+      "digest": "ebb52109bdec07a22d9aa49a368e7c841b07376680d7d43ebdaaa730ff88b709"
+    },
+    {
+      "round": 1,
+      "view": "shopping",
+      "ms": 779,
+      "queries": 9,
+      "bytes": 2460,
+      "digest": "10067bf19ee9a366042e5a956608e875d2b31f8543a89db21dfff323efdcb309"
+    },
+    {
+      "round": 1,
+      "view": "detail",
+      "ms": 1047,
+      "queries": 13,
+      "bytes": 715,
+      "digest": "f3281997a00b4fdd9d0c03821f934a1695b9a0f74295d5038cb329246aad6bfc"
+    },
+    {
+      "round": 1,
+      "view": "stock-history",
+      "ms": 431,
+      "queries": 4,
+      "bytes": 381,
+      "digest": "0ee03ec572af0f4eee8dba044770c0665562195e15fbc5e0b26e3699ffbc5df4"
+    },
+    {
+      "round": 2,
+      "view": "session",
+      "ms": 70,
+      "queries": 1,
+      "bytes": null,
+      "digest": null
+    },
+    {
+      "round": 2,
+      "view": "inbox",
+      "ms": 694,
+      "queries": 8,
+      "bytes": 382,
+      "digest": "d63a4e781be6f201302e1e614d85eeceb7c9172057cea5302c249964526fefd6"
+    },
+    {
+      "round": 2,
+      "view": "calendars",
+      "ms": 421,
+      "queries": 4,
+      "bytes": 314,
+      "digest": "2cbebfb656409dbcd573eaf3e498b6c4bbeedc1cf5be5012dce48f478458770d"
+    },
+    {
+      "round": 2,
+      "view": "agenda-day",
+      "ms": 1534,
+      "queries": 20,
+      "bytes": 3429,
+      "digest": "bfc431b37a026db302170cae95cbff5304471075202000bcc0fa9b4088c4383d"
+    },
+    {
+      "round": 2,
+      "view": "agenda-week",
+      "ms": 1538,
+      "queries": 20,
+      "bytes": 11753,
+      "digest": "506d5ffcebffe7d474a072a26864d8a426932b91ad65f231b97555676a6663f2"
+    },
+    {
+      "round": 2,
+      "view": "agenda-month",
+      "ms": 1603,
+      "queries": 21,
+      "bytes": 17273,
+      "digest": "ce9197344917485b84022a37098b175e019e9b1f3d846eb6444b9aaca8380be9"
+    },
+    {
+      "round": 2,
+      "view": "agenda-year",
+      "ms": 765,
+      "queries": 9,
+      "bytes": 928,
+      "digest": "5e2f7e27f3d9e354c3d597f16420437317c43de80676e14b9d15bca54c805638"
+    },
+    {
+      "round": 2,
+      "view": "pantry",
+      "ms": 417,
+      "queries": 4,
+      "bytes": 12175,
+      "digest": "42d23054f71444764a9d84a4cb65bdb94658434b64513a5ab9ca23c7888dec09"
+    },
+    {
+      "round": 2,
+      "view": "recipes",
+      "ms": 486,
+      "queries": 5,
+      "bytes": 3980,
+      "digest": "53825c272d974c725098bc5df39c4f0f6cc7c26474e8950128db35c1796f99d9"
+    },
+    {
+      "round": 2,
+      "view": "planner-week",
+      "ms": 1984,
+      "queries": 26,
+      "bytes": 28472,
+      "digest": "3059eb3efe3b9e42a6dcc242a869411afe7c07fb094399fa959d7f944d1069e9"
+    },
+    {
+      "round": 2,
+      "view": "planner-fortnight",
+      "ms": 1947,
+      "queries": 26,
+      "bytes": 28473,
+      "digest": "ebb52109bdec07a22d9aa49a368e7c841b07376680d7d43ebdaaa730ff88b709"
+    },
+    {
+      "round": 2,
+      "view": "shopping",
+      "ms": 781,
+      "queries": 9,
+      "bytes": 2460,
+      "digest": "10067bf19ee9a366042e5a956608e875d2b31f8543a89db21dfff323efdcb309"
+    },
+    {
+      "round": 2,
+      "view": "detail",
+      "ms": 1039,
+      "queries": 13,
+      "bytes": 715,
+      "digest": "f3281997a00b4fdd9d0c03821f934a1695b9a0f74295d5038cb329246aad6bfc"
+    },
+    {
+      "round": 2,
+      "view": "stock-history",
+      "ms": 417,
+      "queries": 4,
+      "bytes": 381,
+      "digest": "0ee03ec572af0f4eee8dba044770c0665562195e15fbc5e0b26e3699ffbc5df4"
+    },
+    {
+      "round": 3,
+      "view": "session",
+      "ms": 70,
+      "queries": 1,
+      "bytes": null,
+      "digest": null
+    },
+    {
+      "round": 3,
+      "view": "inbox",
+      "ms": 696,
+      "queries": 8,
+      "bytes": 382,
+      "digest": "d63a4e781be6f201302e1e614d85eeceb7c9172057cea5302c249964526fefd6"
+    },
+    {
+      "round": 3,
+      "view": "calendars",
+      "ms": 415,
+      "queries": 4,
+      "bytes": 314,
+      "digest": "2cbebfb656409dbcd573eaf3e498b6c4bbeedc1cf5be5012dce48f478458770d"
+    },
+    {
+      "round": 3,
+      "view": "agenda-day",
+      "ms": 1528,
+      "queries": 20,
+      "bytes": 3429,
+      "digest": "bfc431b37a026db302170cae95cbff5304471075202000bcc0fa9b4088c4383d"
+    },
+    {
+      "round": 3,
+      "view": "agenda-week",
+      "ms": 1528,
+      "queries": 20,
+      "bytes": 11753,
+      "digest": "506d5ffcebffe7d474a072a26864d8a426932b91ad65f231b97555676a6663f2"
+    },
+    {
+      "round": 3,
+      "view": "agenda-month",
+      "ms": 1619,
+      "queries": 21,
+      "bytes": 17273,
+      "digest": "ce9197344917485b84022a37098b175e019e9b1f3d846eb6444b9aaca8380be9"
+    },
+    {
+      "round": 3,
+      "view": "agenda-year",
+      "ms": 764,
+      "queries": 9,
+      "bytes": 928,
+      "digest": "5e2f7e27f3d9e354c3d597f16420437317c43de80676e14b9d15bca54c805638"
+    },
+    {
+      "round": 3,
+      "view": "pantry",
+      "ms": 418,
+      "queries": 4,
+      "bytes": 12175,
+      "digest": "42d23054f71444764a9d84a4cb65bdb94658434b64513a5ab9ca23c7888dec09"
+    },
+    {
+      "round": 3,
+      "view": "recipes",
+      "ms": 484,
+      "queries": 5,
+      "bytes": 3980,
+      "digest": "53825c272d974c725098bc5df39c4f0f6cc7c26474e8950128db35c1796f99d9"
+    },
+    {
+      "round": 3,
+      "view": "planner-week",
+      "ms": 1958,
+      "queries": 26,
+      "bytes": 28472,
+      "digest": "3059eb3efe3b9e42a6dcc242a869411afe7c07fb094399fa959d7f944d1069e9"
+    },
+    {
+      "round": 3,
+      "view": "planner-fortnight",
+      "ms": 1961,
+      "queries": 26,
+      "bytes": 28473,
+      "digest": "ebb52109bdec07a22d9aa49a368e7c841b07376680d7d43ebdaaa730ff88b709"
+    },
+    {
+      "round": 3,
+      "view": "shopping",
+      "ms": 766,
+      "queries": 9,
+      "bytes": 2460,
+      "digest": "10067bf19ee9a366042e5a956608e875d2b31f8543a89db21dfff323efdcb309"
+    },
+    {
+      "round": 3,
+      "view": "detail",
+      "ms": 1041,
+      "queries": 13,
+      "bytes": 715,
+      "digest": "f3281997a00b4fdd9d0c03821f934a1695b9a0f74295d5038cb329246aad6bfc"
+    },
+    {
+      "round": 3,
+      "view": "stock-history",
+      "ms": 414,
+      "queries": 4,
+      "bytes": 381,
+      "digest": "0ee03ec572af0f4eee8dba044770c0665562195e15fbc5e0b26e3699ffbc5df4"
+    }
+  ]
+}

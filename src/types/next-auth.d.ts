@@ -5,8 +5,4 @@ declare module "next-auth" {
   interface Session {
     user?: { id: string } & NonNullable<DefaultSession["user"]>;
   }
-
-  interface User {
-    googleSub?: string;
-  }
 }

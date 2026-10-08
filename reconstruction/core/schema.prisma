@@ -1,0 +1,693 @@
+// Isolated core, derived from docs/schema.objetivo.prisma.
+// Future module/recurrence relations are introduced by later migrations.
+generator client {
+  provider = "prisma-client"
+  output = "./generated"
+  importFileExtension = "ts"
+}
+datasource db {
+  provider = "postgresql"
+}
+
+enum ActivityKind {
+  task
+  meal
+}
+
+enum ActivityLifecycle {
+  active
+  retired
+}
+
+enum ScheduleMode {
+  timed
+  allDay
+}
+
+enum IngredientUnit {
+  g
+  ml
+  piece
+}
+enum IngredientScope {
+  global
+  private
+}
+enum InventoryOperationKind {
+  mealCompletion
+  purchase
+  adjustment
+  reversal
+}
+
+enum MealStepRole {
+  preparation
+  priorReminder
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String?
+  email         String?  @unique
+  emailVerified DateTime? @db.Timestamptz(3)
+  image         String?
+  timeZone      String   @default("America/Mexico_City") @db.VarChar(64)
+  dataRevision  BigInt   @default(0)
+  retentionCheckedAt DateTime? @db.Timestamptz(3)
+  retentionSegmentCursor String? @db.Uuid
+  eatingMinutes Int      @default(20)
+  washingMinutes Int     @default(10)
+  kitchenInitialized Boolean @default(false)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  accounts      Account[]
+  sessions      Session[]
+  calendars     Calendar[]
+  activities    Activity[]
+  commands      CommandReceipt[]
+  series        RecurrenceSeries[]
+  ingredients   Ingredient[]
+  ingredientPreferences IngredientPreference[]
+  pantry        PantryBalance[]
+  inventoryOperations InventoryOperation[]
+  recipes Recipe[]
+  mealSlots MealSlot[]
+  shoppingEntries ShoppingEntry[]
+  @@index([retentionCheckedAt, id])
+  @@map("users")
+}
+
+model Account {
+  id                String @id @default(uuid()) @db.Uuid
+  userId            String @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String @id @default(uuid()) @db.Uuid
+  sessionToken String @unique
+  userId       String @db.Uuid
+  expires      DateTime @db.Timestamptz(3)
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([userId])
+  @@index([expires])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String @unique
+  expires    DateTime @db.Timestamptz(3)
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Calendar {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @db.Uuid
+  name      String @db.VarChar(120)
+  color     String @db.VarChar(7)
+  moduleKey String? @db.VarChar(40)
+  revision  Int @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user      User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  preference CalendarPreference?
+  schedules ActivitySchedule[]
+  segments SeriesSegment[]
+  scheduledSteps SeriesStepDefinition[]
+  @@unique([id, userId])
+  @@unique([userId, moduleKey])
+  @@index([userId, name])
+  @@map("calendars")
+}
+
+model CalendarPreference {
+  calendarId String @id @db.Uuid
+  userId     String @db.Uuid
+  visible    Boolean @default(true)
+  position   Int @default(0)
+  calendar   Calendar @relation(fields: [calendarId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  @@unique([calendarId, userId])
+  @@index([userId, position])
+  @@map("calendar_preferences")
+}
+
+model Activity {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @db.Uuid
+  kind        ActivityKind @default(task)
+  lifecycle   ActivityLifecycle @default(active)
+  title       String @db.VarChar(250)
+  description String? @db.Text
+  parentId    String? @db.Uuid
+  position    Int @default(0)
+  completedAt DateTime? @db.Timestamptz(3)
+  keep        Boolean @default(false)
+  highlighted Boolean @default(false)
+  revision    Int @default(0)
+  progressSequence BigInt @default(0)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  parent      Activity? @relation("ActivityChildren", fields: [parentId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  children    Activity[] @relation("ActivityChildren")
+  schedule    ActivitySchedule?
+  occurrenceId String? @unique @db.Uuid
+  stepKeyId String? @db.Uuid
+  occurrence OccurrenceOverride? @relation(fields: [occurrenceId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  stepKey SeriesStepKey? @relation(fields: [stepKeyId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  inventoryOperations InventoryOperation[]
+  mealBlock MealBlock?
+  mealStep MealStepData?
+  @@unique([occurrenceId, userId])
+  @@unique([id, userId])
+  @@index([userId, lifecycle, completedAt])
+  @@index([userId, parentId, position])
+  @@index([userId, highlighted])
+  @@map("activities")
+}
+
+model ActivitySchedule {
+  activityId String @id @db.Uuid
+  userId     String @db.Uuid
+  calendarId String @db.Uuid
+  mode       ScheduleMode
+  timeZone   String @db.VarChar(64)
+  startsAt   DateTime? @db.Timestamptz(3)
+  endsAt     DateTime? @db.Timestamptz(3)
+  startDate  DateTime? @db.Date
+  endDate    DateTime? @db.Date
+  // Derived from the actual end + completedAt; not a second source of completion.
+  purgeEligibleAt DateTime? @db.Timestamptz(3)
+  activity   Activity @relation(fields: [activityId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  calendar   Calendar @relation(fields: [calendarId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([activityId, userId])
+  @@index([userId, calendarId, startsAt])
+  @@index([userId, calendarId, startDate])
+  @@index([purgeEligibleAt])
+  @@map("activity_schedules")
+}
+
+model CommandReceipt {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @db.Uuid
+  commandId   String @db.Uuid
+  action      String @db.VarChar(60)
+  payloadHash String @db.VarChar(64)
+  result      Json
+  committedAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt   DateTime? @db.Timestamptz(3)
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([userId, commandId])
+  @@index([expiresAt])
+  @@map("command_receipts")
+}
+
+model RecurrenceSeries {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @db.Uuid
+  revision  Int @default(0)
+  retiredAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user      User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  segments  SeriesSegment[]
+  stepKeys  SeriesStepKey[]
+  occurrences OccurrenceOverride[]
+  progressRules SeriesProgressRule[]
+  retiredRanges OccurrenceRetirementRange[]
+  @@unique([id, userId])
+  @@index([userId, retiredAt])
+  @@map("recurrence_series")
+}
+
+model SeriesSegment {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @db.Uuid
+  seriesId    String @db.Uuid
+  calendarId  String @db.Uuid
+  fromOrdinal BigInt
+  toOrdinal   BigInt?
+  // Each frequency generation has its own stable ordinal namespace.
+  ordinalOffset BigInt @default(0)
+  protectedOnly Boolean @default(false)
+  protectedRanges Json @default("[]")
+  title       String @db.VarChar(250)
+  description String? @db.Text
+  mode        ScheduleMode
+  timeZone    String @db.VarChar(64)
+  // Canonical local ISO value, not UTC; paired with mode and IANA zone.
+  anchorLocal String @db.VarChar(32)
+  rrule       String @db.Text
+  untilDate DateTime? @db.Date
+  durationMinutes Int?
+  durationDays Int?
+  clampInvalidMonthDay Boolean @default(true)
+  series      RecurrenceSeries @relation(fields: [seriesId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  calendar    Calendar @relation(fields: [calendarId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  steps       SeriesStepDefinition[]
+  @@unique([id, userId])
+  @@unique([seriesId, fromOrdinal])
+  @@index([userId, calendarId])
+  @@map("series_segments")
+}
+
+model SeriesStepKey {
+  id       String @id @default(uuid()) @db.Uuid
+  userId   String @db.Uuid
+  seriesId String @db.Uuid
+  series   RecurrenceSeries @relation(fields: [seriesId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  definitions SeriesStepDefinition[]
+  activities Activity[]
+  progressRules SeriesProgressRule[]
+  @@unique([id, userId])
+  @@index([seriesId])
+  @@map("series_step_keys")
+}
+
+model SeriesStepDefinition {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @db.Uuid
+  segmentId String @db.Uuid
+  stepKeyId String @db.Uuid
+  title     String @db.VarChar(150)
+  description String? @db.Text
+  position  Int
+  createdSequence BigInt @default(0)
+  scheduleCalendarId String? @db.Uuid
+  scheduleMode ScheduleMode?
+  scheduleTimeZone String? @db.VarChar(64)
+  scheduleDayOffset Int?
+  scheduleTime String? @db.VarChar(5)
+  scheduleDurationMinutes Int?
+  scheduleDurationDays Int?
+  scheduleHistory Json @default("[]")
+  scheduleCalendar Calendar? @relation(fields: [scheduleCalendarId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  segment   SeriesSegment @relation(fields: [segmentId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  stepKey   SeriesStepKey @relation(fields: [stepKeyId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([segmentId, stepKeyId])
+  @@index([segmentId, position])
+  @@index([userId, scheduleCalendarId])
+  @@map("series_step_definitions")
+}
+
+model OccurrenceOverride {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @db.Uuid
+  seriesId  String @db.Uuid
+  ordinal   BigInt
+  originalLocal String @db.VarChar(32)
+  originalTimeZone String @db.VarChar(64)
+  retiredAt DateTime? @db.Timestamptz(3)
+  retirementReason String? @db.VarChar(20)
+  revision  Int @default(0)
+  series    RecurrenceSeries @relation(fields: [seriesId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  activity  Activity?
+  @@unique([id, userId])
+  @@unique([seriesId, ordinal])
+  @@index([userId, retiredAt])
+  @@map("occurrence_overrides")
+}
+
+model SeriesProgressRule {
+  id          BigInt @id @default(autoincrement())
+  userId      String @db.Uuid
+  seriesId    String @db.Uuid
+  stepKeyId   String? @db.Uuid
+  fromOrdinal BigInt
+  toOrdinal   BigInt?
+  completed   Boolean
+  sequence    BigInt
+  appliedAt   DateTime @default(now()) @db.Timestamptz(3)
+  commandId   String @db.Uuid
+  series      RecurrenceSeries @relation(fields: [seriesId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  stepKey     SeriesStepKey? @relation(fields: [stepKeyId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  // Command ID is an audit key; compaction of receipts must not cascade here.
+  @@index([seriesId, stepKeyId, fromOrdinal, id])
+  @@index([userId, commandId])
+  @@map("series_progress_rules")
+}
+
+model OccurrenceRetirementRange {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @db.Uuid
+  seriesId    String @db.Uuid
+  fromOrdinal BigInt
+  toOrdinal   BigInt
+  reason      String @db.VarChar(20)
+  series      RecurrenceSeries @relation(fields: [seriesId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([seriesId, fromOrdinal])
+  @@map("occurrence_retirement_ranges")
+}
+
+model Ingredient {
+  id String @id @default(uuid()) @db.Uuid
+  scope IngredientScope
+  ownerUserId String? @db.Uuid
+  name String @db.VarChar(120)
+  normalizedName String @db.VarChar(120)
+  unit IngredientUnit
+  revision Int @default(0)
+  retiredAt DateTime? @db.Timestamptz(3)
+  owner User? @relation(fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  preferences IngredientPreference[] @relation("PreferredIngredient")
+  replacements IngredientPreference[] @relation("IngredientReplacement")
+  pantry PantryBalance[]
+  movements InventoryMovement[]
+  recipeSteps RecipeStep[]
+  mealSteps MealStepData[]
+  shoppingEntries ShoppingEntry[]
+  @@index([scope, normalizedName])
+  @@index([ownerUserId, normalizedName])
+  @@map("ingredients")
+}
+
+model IngredientPreference {
+  userId String @db.Uuid
+  ingredientId String @db.Uuid
+  hidden Boolean @default(false)
+  trackingMode String @default("quantity") @db.VarChar(16)
+  retiredForUser Boolean @default(false)
+  replacementId String? @db.Uuid
+  revision Int @default(0)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ingredient Ingredient @relation("PreferredIngredient", fields: [ingredientId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  replacement Ingredient? @relation("IngredientReplacement", fields: [replacementId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@id([userId, ingredientId])
+  @@map("ingredient_preferences")
+}
+
+model PantryBalance {
+  userId String @db.Uuid
+  ingredientId String @db.Uuid
+  quantity Decimal @default(0) @db.Decimal(12, 3)
+  listed Boolean @default(true)
+  available Boolean @default(false)
+  availabilityReceiptId String? @db.Uuid
+  revision Int @default(0)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@id([userId, ingredientId])
+  @@map("pantry_balances")
+}
+
+model InventoryOperation {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  kind InventoryOperationKind
+  commandId String @db.Uuid
+  sourceKey String @db.Uuid
+  sourceActivityId String? @db.Uuid
+  sourceRevision Int?
+  reversalOfId String? @unique @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  sourceActivity Activity? @relation(fields: [sourceActivityId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  reversalOf InventoryOperation? @relation("OperationReversal", fields: [reversalOfId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  reversal InventoryOperation? @relation("OperationReversal")
+  mealCompletion MealCompletion?
+  shoppingReceipt ShoppingReceipt?
+  movements InventoryMovement[]
+  @@unique([id, userId])
+  @@unique([reversalOfId, userId])
+  @@unique([userId, commandId, sourceKey, kind])
+  @@index([userId, commandId])
+  @@index([userId, sourceKey, createdAt])
+  @@index([sourceActivityId])
+  @@map("inventory_operations")
+}
+
+model ShoppingEntry {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  ingredientId String? @db.Uuid
+  name String @db.VarChar(120)
+  unit String @db.VarChar(32)
+  free Boolean @default(false)
+  quantity Decimal? @db.Decimal(12, 3)
+  revision Int @default(0)
+  closedAt DateTime? @db.Timestamptz(3)
+  retiredAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  receipts ShoppingReceipt[]
+  @@unique([id, userId])
+  @@index([userId, retiredAt, closedAt])
+  @@map("shopping_entries")
+}
+
+model ShoppingReceipt {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  entryId String @db.Uuid
+  operationId String @unique @db.Uuid
+  name String @db.VarChar(120)
+  unit String @db.VarChar(32)
+  quantity Decimal @db.Decimal(12, 3)
+  requiredQuantity Decimal @db.Decimal(12, 3)
+  optionalQuantity Decimal @db.Decimal(12, 3)
+  availabilityOnly Boolean @default(false)
+  previousAvailable Boolean?
+  previousAvailabilityReceiptId String? @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  reversedAt DateTime? @db.Timestamptz(3)
+  entry ShoppingEntry @relation(fields: [entryId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  operation InventoryOperation @relation(fields: [operationId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([id, userId])
+  @@unique([operationId, userId])
+  @@index([userId, createdAt, id])
+  @@map("shopping_receipts")
+}
+
+model InventoryMovement {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  operationId String @db.Uuid
+  ingredientId String @db.Uuid
+  delta Decimal @db.Decimal(12, 3)
+  unit IngredientUnit
+  operation InventoryOperation @relation(fields: [operationId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([operationId, ingredientId])
+  @@index([userId, ingredientId])
+  @@map("inventory_movements")
+}
+
+model Recipe {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  revision Int @default(0)
+  retiredAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  versions RecipeRevision[]
+  classifications RecipeMealSlot[]
+  @@unique([id, userId])
+  @@index([userId, retiredAt, id])
+  @@map("recipes")
+}
+
+model RecipeRevision {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  recipeId String @db.Uuid
+  version Int
+  name String @db.VarChar(250)
+  description String? @db.Text
+  draft Boolean @default(true)
+  baseServings Decimal? @db.Decimal(10, 3)
+  cookingMinutes Int?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  recipe Recipe @relation(fields: [recipeId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  steps RecipeStep[]
+  mealRecipes MealRecipe[]
+  cookedBatches CookedBatch[]
+  @@unique([id, userId])
+  @@unique([recipeId, version])
+  @@map("recipe_revisions")
+}
+
+model RecipeStep {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  recipeRevisionId String @db.Uuid
+  stepKey String @db.Uuid
+  position Int
+  text String @db.VarChar(2000)
+  optional Boolean @default(false)
+  ingredientId String? @db.Uuid
+  ingredientNameSnapshot String? @db.VarChar(120)
+  unitSnapshot IngredientUnit?
+  quantityForBaseServings Decimal? @db.Decimal(12, 3)
+  equivalent String? @db.VarChar(120)
+  minutesBefore Int?
+  priorTitle String? @db.VarChar(150)
+  priorGroup Boolean @default(false)
+  revision RecipeRevision @relation(fields: [recipeRevisionId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([recipeRevisionId, stepKey])
+  @@unique([recipeRevisionId, position])
+  @@index([ingredientId])
+  @@map("recipe_steps")
+}
+
+model MealSlot {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  name String @db.VarChar(80)
+  position Int
+  startMinute Int
+  retiredAt DateTime? @db.Timestamptz(3)
+  revision Int @default(0)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  cells MealCell[]
+  classifications RecipeMealSlot[]
+  @@unique([id, userId])
+  @@index([userId, retiredAt, position])
+  @@map("meal_slots")
+}
+
+model RecipeMealSlot {
+  recipeId String @db.Uuid
+  slotId String @db.Uuid
+  userId String @db.Uuid
+  recipe Recipe @relation(fields: [recipeId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  slot MealSlot @relation(fields: [slotId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@id([recipeId, slotId])
+  @@index([slotId, userId])
+  @@map("recipe_meal_slots")
+}
+
+model MealBlock {
+  activityId String @id @db.Uuid
+  userId String @db.Uuid
+  cookingEnabled Boolean @default(true)
+  eatingEnabled Boolean @default(true)
+  washingEnabled Boolean @default(true)
+  eatingMinutes Int
+  washingMinutes Int
+  cookingMinutesOverride Int?
+  durationMinutesOverride Int?
+  activity Activity @relation(fields: [activityId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  cell MealCell?
+  recipes MealRecipe[]
+  completions MealCompletion[]
+  @@unique([activityId, userId])
+  @@map("meal_blocks")
+}
+
+model MealCell {
+  blockId String @id @db.Uuid
+  userId String @db.Uuid
+  slotId String @db.Uuid
+  planningDate DateTime @db.Date
+  block MealBlock @relation(fields: [blockId, userId], references: [activityId, userId], onDelete: NoAction, onUpdate: NoAction)
+  slot MealSlot @relation(fields: [slotId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([blockId, userId])
+  @@unique([slotId, planningDate])
+  @@index([userId, planningDate])
+  @@map("meal_cells")
+}
+
+model MealRecipe {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  blockId String @db.Uuid
+  recipeRevisionId String @db.Uuid
+  position Int
+  cookedServings Decimal @db.Decimal(10, 3)
+  eatenServings Decimal @db.Decimal(10, 3)
+  cookingMinutesOverride Int?
+  ingredientQuantities Json?
+  block MealBlock @relation(fields: [blockId, userId], references: [activityId, userId], onDelete: NoAction, onUpdate: NoAction)
+  recipeRevision RecipeRevision @relation(fields: [recipeRevisionId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  steps MealStepData[]
+  @@unique([id, userId])
+  @@index([blockId, position])
+  @@map("meal_recipes")
+}
+
+model MealStepData {
+  activityId String @id @db.Uuid
+  userId String @db.Uuid
+  mealRecipeId String @db.Uuid
+  sourceStepKey String @db.Uuid
+  role MealStepRole
+  ingredientId String? @db.Uuid
+  ingredientNameSnapshot String? @db.VarChar(120)
+  unitSnapshot IngredientUnit?
+  quantityPerServing Decimal? @db.Decimal(18, 9)
+  equivalent String? @db.VarChar(120)
+  optional Boolean @default(false)
+  suggestedMinutesBefore Int?
+  scheduleManuallyAdjusted Boolean @default(false)
+  activity Activity @relation(fields: [activityId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  mealRecipe MealRecipe @relation(fields: [mealRecipeId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([activityId, userId])
+  @@unique([mealRecipeId, sourceStepKey, role])
+  @@map("meal_step_data")
+}
+
+// Immutable effects outlive the visual event. Reversal is a distinct operation.
+model MealCompletion {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  blockId String @db.Uuid
+  operationId String @unique @db.Uuid
+  optionalSteps Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  reversedAt DateTime? @db.Timestamptz(3)
+  block MealBlock @relation(fields: [blockId, userId], references: [activityId, userId], onDelete: NoAction, onUpdate: NoAction)
+  operation InventoryOperation @relation(fields: [operationId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  batches CookedBatch[]
+  uses PortionUse[]
+  @@unique([id, userId])
+  @@unique([operationId, userId])
+  @@index([userId, blockId, createdAt])
+  @@map("meal_completions")
+}
+
+model CookedBatch {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  completionId String @db.Uuid
+  recipeRevisionId String @db.Uuid
+  quantity Decimal @db.Decimal(10, 3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  completion MealCompletion @relation(fields: [completionId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  recipeRevision RecipeRevision @relation(fields: [recipeRevisionId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  uses PortionUse[]
+  @@unique([id, userId])
+  @@index([userId, revokedAt, createdAt])
+  @@map("cooked_batches")
+}
+
+model PortionUse {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  completionId String @db.Uuid
+  batchId String @db.Uuid
+  quantity Decimal @db.Decimal(10, 3)
+  reversedAt DateTime? @db.Timestamptz(3)
+  completion MealCompletion @relation(fields: [completionId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  batch CookedBatch @relation(fields: [batchId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([completionId, batchId])
+  @@index([userId, batchId, reversedAt])
+  @@map("portion_uses")
+}

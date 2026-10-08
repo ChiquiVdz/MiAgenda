@@ -1,0 +1,174 @@
+// Isolated core, derived from docs/schema.objetivo.prisma.
+// Future module/recurrence relations are introduced by later migrations.
+generator client {
+  provider = "prisma-client"
+  output = "./generated"
+  importFileExtension = "ts"
+}
+datasource db {
+  provider = "postgresql"
+}
+
+enum ActivityKind {
+  task
+  meal
+}
+
+enum ActivityLifecycle {
+  active
+  retired
+}
+
+enum ScheduleMode {
+  timed
+  allDay
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String?
+  email         String?  @unique
+  emailVerified DateTime? @db.Timestamptz(3)
+  image         String?
+  timeZone      String   @default("America/Mexico_City") @db.VarChar(64)
+  dataRevision  BigInt   @default(0)
+  eatingMinutes Int      @default(20)
+  washingMinutes Int     @default(10)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  accounts      Account[]
+  sessions      Session[]
+  calendars     Calendar[]
+  activities    Activity[]
+  commands      CommandReceipt[]
+  @@map("users")
+}
+
+model Account {
+  id                String @id @default(uuid()) @db.Uuid
+  userId            String @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String @id @default(uuid()) @db.Uuid
+  sessionToken String @unique
+  userId       String @db.Uuid
+  expires      DateTime @db.Timestamptz(3)
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([userId])
+  @@index([expires])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String @unique
+  expires    DateTime @db.Timestamptz(3)
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Calendar {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @db.Uuid
+  name      String @db.VarChar(120)
+  color     String @db.VarChar(7)
+  moduleKey String? @db.VarChar(40)
+  revision  Int @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user      User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  preference CalendarPreference?
+  schedules ActivitySchedule[]
+  @@unique([id, userId])
+  @@unique([userId, moduleKey])
+  @@index([userId, name])
+  @@map("calendars")
+}
+
+model CalendarPreference {
+  calendarId String @id @db.Uuid
+  userId     String @db.Uuid
+  visible    Boolean @default(true)
+  position   Int @default(0)
+  calendar   Calendar @relation(fields: [calendarId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  @@unique([calendarId, userId])
+  @@index([userId, position])
+  @@map("calendar_preferences")
+}
+
+model Activity {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @db.Uuid
+  kind        ActivityKind @default(task)
+  lifecycle   ActivityLifecycle @default(active)
+  title       String @db.VarChar(250)
+  description String? @db.Text
+  parentId    String? @db.Uuid
+  position    Int @default(0)
+  completedAt DateTime? @db.Timestamptz(3)
+  keep        Boolean @default(false)
+  highlighted Boolean @default(false)
+  revision    Int @default(0)
+  progressSequence BigInt @default(0)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  parent      Activity? @relation("ActivityChildren", fields: [parentId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  children    Activity[] @relation("ActivityChildren")
+  schedule    ActivitySchedule?
+  @@unique([id, userId])
+  @@index([userId, lifecycle, completedAt])
+  @@index([userId, parentId, position])
+  @@index([userId, highlighted])
+  @@map("activities")
+}
+
+model ActivitySchedule {
+  activityId String @id @db.Uuid
+  userId     String @db.Uuid
+  calendarId String @db.Uuid
+  mode       ScheduleMode
+  timeZone   String @db.VarChar(64)
+  startsAt   DateTime? @db.Timestamptz(3)
+  endsAt     DateTime? @db.Timestamptz(3)
+  startDate  DateTime? @db.Date
+  endDate    DateTime? @db.Date
+  // Derived from the actual end + completedAt; not a second source of completion.
+  purgeEligibleAt DateTime? @db.Timestamptz(3)
+  activity   Activity @relation(fields: [activityId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  calendar   Calendar @relation(fields: [calendarId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([activityId, userId])
+  @@index([userId, calendarId, startsAt])
+  @@index([userId, calendarId, startDate])
+  @@index([purgeEligibleAt])
+  @@map("activity_schedules")
+}
+
+model CommandReceipt {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @db.Uuid
+  commandId   String @db.Uuid
+  action      String @db.VarChar(60)
+  payloadHash String @db.VarChar(64)
+  result      Json
+  committedAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt   DateTime? @db.Timestamptz(3)
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([userId, commandId])
+  @@index([expiresAt])
+  @@map("command_receipts")
+}

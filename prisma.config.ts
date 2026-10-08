@@ -1,14 +1,12 @@
-import dotenv from "dotenv";
-import { defineConfig, env } from "prisma/config";
-
-dotenv.config({ path: [".env.local", ".env"] });
+import { defineConfig } from "prisma/config";
+import { coreDatabaseUrl } from "./reconstruction/core/src/environment";
 
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema: "reconstruction/core/schema.prisma",
   migrations: {
-    path: "prisma/migrations",
+    path: "reconstruction/core/migrations",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    url: coreDatabaseUrl(),
   },
 });

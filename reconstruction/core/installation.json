@@ -1,0 +1,253 @@
+{
+  "database": "miagenda_core",
+  "migration": "20261003000100_core",
+  "migrationSha256": "8e8c3b0c841039873629c23cff6886444b6c566e922dfc21acb1b332bb57aae7",
+  "applied": true,
+  "verified": {
+    "prismaSchema": true,
+    "coreTypeScript": true,
+    "catalogTables": 9,
+    "catalogTriggers": 10,
+    "catalogChecks": 9,
+    "functionalTests": false,
+    "interfaceConnected": true
+  },
+  "legacyReference": {
+    "path": "reference/legacy-before-core.zip",
+    "sha256": "feb6a6f0952882451baba56863f009a2c42f8ea3265980922a7c49cc0b1377db"
+  },
+  "inboxIntegration": {
+    "enabledBy": "MIAGENDA_CORE_ENABLED",
+    "sessionCookie": "miagenda-core.session-token",
+    "routes": [
+      "/login",
+      "/inbox",
+      "/api/core",
+      "/api/auth/[...nextauth]"
+    ],
+    "typeScript": true,
+    "observedGoogleLogin": true,
+    "observedInboxResponse": true,
+    "observedCommandResponse": true,
+    "functionalSuiteRun": false
+  },
+  "agendaIntegration": {
+    "routes": [
+      "/agenda"
+    ],
+    "views": [
+      "day",
+      "week",
+      "month",
+      "year"
+    ],
+    "scheduledTasks": true,
+    "scheduledChildren": true,
+    "calendarCreation": true,
+    "persistedCalendarVisibility": true,
+    "functionalSuiteRun": false,
+    "manualReviewPending": true,
+    "monthYear": {
+      "yearReadsHighlightsOnly": true,
+      "sameActivityDetails": true,
+      "navigationPreservesChosenDate": true,
+      "typeScript": true,
+      "functionalSuiteRun": false,
+      "manualReviewPending": true
+    },
+    "weekDrag": {
+      "timedActivities": true,
+      "stepMinutes": 15,
+      "resizeStartAndEnd": true,
+      "saveOnRelease": true,
+      "allDayDrag": false,
+      "functionalSuiteRun": false,
+      "manualReviewPending": true
+    },
+    "calendarManagement": {
+      "editNameAndColor": true,
+      "deleteOrTransferWithImpact": true,
+      "userReviewed": true
+    },
+    "recurrence": {
+      "creation": true,
+      "rangeProjectionWithoutWrites": true,
+      "instanceMaterialization": true,
+      "instanceActions": true,
+      "seriesScopes": true,
+      "sharedStepEditor": true,
+      "functionalSuiteRun": false,
+      "manualReviewPending": false,
+      "frequencyEditing": true,
+      "userReviewed": true,
+      "frequencyVerification": "TypeScript and applied migration; functional verification not run"
+    }
+  },
+  "forwardMigrations": [
+    {
+      "name": "20261003000200_recurrence",
+      "sha256": "0c8e3430f64157f0c6dabd1b5569077531ea7b4a12c7a51b66b940003941c249",
+      "applied": true
+    },
+    {
+      "name": "20261005000100_series_scopes",
+      "sha256": "cbc6e8164fd4e9bb6fca2cae3593b1259fc490601f9accd0a19cba7be83882c0",
+      "applied": true
+    },
+    {
+      "name": "20261005000200_step_key_trigger_fix",
+      "sha256": "60a7b54127ae1efc0768fe6ffebf5f812ef33a713782bba0faf7e61f1d9c5f40",
+      "applied": true
+    },
+    {
+      "name": "20261005000300_retention",
+      "sha256": "acb23c8186bc50483ffd0cfd0651412d9f97fae2584bb6c7174295ddbd00f9ba",
+      "applied": true
+    },
+    {
+      "name": "20261005000400_frequency_generations",
+      "sha256": "e636b080756e1b77c678640ffcae136fd9d03aa15119c2633628d22b54d732ab",
+      "applied": true
+    },
+    {
+      "name": "20261005000500_pantry",
+      "sha256": "113b88efe45c90c59d2140daccab7b96fd76bb05ed368901eb1fda146f788e00",
+      "applied": true
+    },
+    {
+      "name": "20261005000600_recipes",
+      "sha256": "ad93f1ff9a5aaa87aa5be04d56edcc61332652fc85d475f75a4298fab0875fd2",
+      "applied": true
+    },
+    {
+      "name": "20261005000700_recipe_unit_integrity",
+      "sha256": "d817b56d717ee9bf75a5189fb9c17dfa86b0059f8777a2af0c99b12fa9f1d850",
+      "applied": true
+    },
+    {
+      "name": "20261005000800_planner",
+      "sha256": "9ac31c927d516b9e8cfb249a081bb915eebb53b4695de540a29c8a677fc5c348",
+      "applied": true
+    },
+    {
+      "name": "20261005000900_meal_consumption",
+      "sha256": "93322d3896ce57deb99da7fc94cfd26c26f4debc478d20689e2e86ad123eb3fa",
+      "applied": true
+    },
+    {
+      "name": "20261005001000_inventory_reversal_alias",
+      "sha256": "a9b5afe466c056dc8341327bd19bf3203db2f54dd44af46b92c753c16ee540cc",
+      "applied": true
+    },
+    {
+      "name": "20261005001100_shopping",
+      "sha256": "67ce49bf2c44e70f5c99e4068d43f5aa5f077105d92359d145b0bbe5bc4757ab",
+      "applied": true
+    },
+    {
+      "name": "20261005001200_shopping_unit",
+      "sha256": "d54c5d4c0851ff37ca1094b1784eb35a073c508836f3f5c3ca6e5e1c55951feb",
+      "applied": true
+    }
+  ],
+  "currentCatalog": {
+    "tables": 34,
+    "triggers": 53,
+    "checks": 34
+  },
+  "retention": {
+    "days": 5,
+    "implemented": true,
+    "authenticatedVisit": true,
+    "protectedCron": true,
+    "parentKeepProtectsChildren": true,
+    "virtualExclusions": true,
+    "typescript": true,
+    "functionalSuiteRun": true,
+    "manualReviewPending": true,
+    "verification": {
+      "checkedAt": "2026-10-05T15:29:46.028Z",
+      "passed": 30,
+      "isolation": "temporary PostgreSQL schema",
+      "temporarySchemaRemoved": true,
+      "report": "retention-verification.json",
+      "browserEndToEnd": false
+    },
+    "mealsIncluded": true,
+    "mealRetentionFunctionalSuiteRun": false
+  },
+  "pantry": {
+    "implemented": true,
+    "routes": [
+      "/cocina"
+    ],
+    "commonIngredients": 41,
+    "privateIngredients": true,
+    "exactDecimalQuantities": true,
+    "immutableInventoryMovements": true,
+    "revisionProtection": true,
+    "unitLockedAfterMovement": true,
+    "hiddenSuggestionsPerUser": true,
+    "emptyInitialBalances": true,
+    "typescript": true,
+    "functionalSuiteRun": false,
+    "manualReviewPending": false,
+    "ingredientReferenceReplacement": "Pending recipe/shopping reconstruction",
+    "userReviewed": true
+  },
+  "recipes": {
+    "implemented": true,
+    "route": "/cocina/recetas",
+    "immutableVersions": true,
+    "drafts": true,
+    "optionalStepsWithoutIngredients": true,
+    "inlineIngredients": true,
+    "previousPreparationDefinition": true,
+    "plannedMealsConnected": true,
+    "typescript": true,
+    "functionalSuiteRun": false,
+    "manualReviewPending": false,
+    "userReviewed": true
+  },
+  "planner": {
+    "implemented": true,
+    "route": "/cocina/planificar",
+    "activityBased": true,
+    "recipeSnapshots": true,
+    "chronologicalAvailability": true,
+    "inventoryConsumption": true,
+    "completionBlocked": false,
+    "priorReminders": true,
+    "functionalSuiteRun": false,
+    "manualReviewPending": true,
+    "typescript": true,
+    "projectedLeftovers": true,
+    "suggestions": true,
+    "realCookedBatches": true,
+    "portionUse": true,
+    "exactReversal": true,
+    "dependencyBlocking": true,
+    "optionalCompletionSelection": true,
+    "reversalAliasFix": {
+      "migration": "20261005001000_inventory_reversal_alias",
+      "applied": true,
+      "functionalReviewPending": true
+    }
+  },
+  "shopping": {
+    "implemented": true,
+    "route": "/cocina/compras",
+    "allWeeks": true,
+    "cookingOnly": true,
+    "requiredOptionalBreakdown": true,
+    "chosenActualQuantities": true,
+    "freeItems": true,
+    "individualAndAllPurchase": true,
+    "exactReversal": true,
+    "purchasedVisibleDays": 30,
+    "evidenceRetained": true,
+    "functionalSuiteRun": false,
+    "manualReviewPending": true,
+    "typescript": true
+  }
+}
