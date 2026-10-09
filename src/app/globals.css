@@ -882,6 +882,8 @@ dialog.meal-suggestion-dialog::backdrop { background: #14251a66; }
 .core-task:has(> .core-task-corner-actions) .core-task-editor > .form-field:first-child { padding-right: 70px; }
 .core-task .inbox-actions.core-task-corner-actions { position: absolute; top: 10px; right: 10px; display: flex; flex-wrap: nowrap; width: auto; margin: 0; padding: 0; gap: 5px; }
 .core-task-corner-actions > button.core-icon-button { padding: 4px; }
+.core-task-schedule-action > button { position: absolute; top: 10px; right: 76px; border: 1px solid var(--line); border-radius: 6px; background: white; }
+.core-task:has(.core-task-schedule-action) .inbox-text > strong { padding-right: 105px; }
 .core-task-editor { width: 100%; }
 .inbox-completed > summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
 .inbox-completed > ul { padding: 0; list-style: none; display: grid; gap: 10px; }
@@ -1278,6 +1280,8 @@ dialog.meal-suggestion-dialog::backdrop { background: #14251a66; }
   input, select, textarea { max-width: 100%; }
   .core-text-button { min-height: 40px; }
   .core-icon-button { width: 36px; height: 36px; flex-basis: 36px; min-height: 36px; }
+  .core-task-schedule-action > button { right: 92px; }
+  .core-task:has(.core-task-schedule-action) .inbox-text > strong { padding-right: 130px; }
   .time-picker .time-picker-controls select { min-width: 44px; min-height: 40px; }
   .planner-meal-header { grid-template-columns: minmax(0, 1fr); }
   .planner-meal-header > .form-field:last-child { grid-column: auto; }
