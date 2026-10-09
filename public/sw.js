@@ -1,6 +1,6 @@
 /* Only the generic shell and fingerprinted public assets are cached here.
    Private data lives in account-isolated IndexedDB, never HTML or API caches. */
-const CACHE = "miagenda-shell-7fcf4eed8b4de9d5";
+const CACHE = "miagenda-shell-d7c4fb2b2204e086";
 const APP = new Set(["/", "/local", "/inbox", "/agenda", "/hoy", "/cocina", "/cocina/inicio", "/cocina/recetas", "/cocina/planificar", "/cocina/compras"]);
 self.addEventListener("install", event => event.waitUntil(prepareShell().then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil((async () => {

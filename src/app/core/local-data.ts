@@ -300,7 +300,9 @@ async function enqueueTask(raw: unknown): Promise<Response> {
     if (previous) {
       if (JSON.stringify(previous.command) !== JSON.stringify(command)) throw new Error("Este intento ya contiene otro cambio.");
       const root = taskRows(copy).get(previous.rootId);
-      return Response.json({ activities: root ? [root, ...root.children.map(c => ({ ...c, children: [] }))] : [], removedIds: command.action === "deleteTask" ? [command.id] : [], calendars: [], dataRevision: copy.dataRevision, localPending: true });
+      const beforeDeletion=command.action==="deleteTask"&&command.id===previous.rootId?taskRows(projectTasks(base,outbox.slice(0,outbox.indexOf(previous)))).get(previous.rootId):null;
+      const removedIds=command.action==="deleteTask"?[command.id,...(beforeDeletion?.children.map(child=>child.id)??[])]:[];
+      return Response.json({ activities: root ? [root, ...root.children.map(c => ({ ...c, children: [] }))] : [], removedIds, calendars: [], dataRevision: copy.dataRevision, localPending: true });
     }
     if (outbox.length >= 500) throw new Error("Tienes 500 cambios pendientes. Sincroniza antes de agregar más.");
     const operation: LocalOperation = { command, rootId: rootFor(copy, command), at: new Date().toISOString() };
@@ -496,7 +498,7 @@ export async function coreFetch(input: string, init?: RequestInit): Promise<Resp
       const command = ["createTask", "saveTask", "editTask", "addSubtasks", "setCompleted", "deleteTask", "scheduleTask", "unscheduleTask"].includes(raw?.action) ? parseCommand(raw) : null;
       if (command && localTaskCommand(command)) {
         const row = taskRows(copy).get(command.action === "createTask" ? command.parentId ?? command.id : command.id);
-        if ((command.action === "createTask" && !command.parentId || row?.kind === "task" && !row.mealRole) ) return await enqueueTask(command);
+        if (command.action === "createTask" && !command.parentId || row?.kind === "task" && !row.mealRole || outbox.some(op=>op.command.commandId===command.commandId)) return await enqueueTask(command);
       }
     } catch (cause) { return Response.json({ message: cause instanceof Error ? cause.message : "No pudimos guardar en el dispositivo." }, { status: 400 }); }
   }
