@@ -88,7 +88,8 @@ a { color: inherit; text-decoration: none; }
 .core-inline-panel { width: 100%; min-width: 0; padding: 12px; margin-top: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--canvas); }
 .core-inline-panel .core-dialog-heading { margin-bottom: 10px; }
 .core-inline-panel h3 { margin: 0; font-size: 14px; }
-.core-subtask { display: flex; align-items: center; gap: 8px; padding: 7px 0; }
+.core-subtask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 0; }
+.core-subtask-schedule-label { flex: 0 0 calc(100% - 30px); margin-left: 30px; color: #66756a; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .core-subtask:has(> .core-inline-panel) { flex-wrap: wrap; }
 .core-subtask > .core-inline-panel { flex-basis: 100%; }
 .core-subtask .today-completion { flex-basis: 22px; width: 22px; height: 22px; align-self: flex-start; }
@@ -1043,6 +1044,7 @@ dialog.meal-suggestion-dialog::backdrop { background: #14251a66; }
 .planner-core-meal strong { overflow-wrap: anywhere; }
 .planner-core-phases { display: flex; gap: 18px; flex-wrap: wrap; }
 .meal-optional-details { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.meal-completion-error { grid-column: 1 / -1; order: 3; font-size: 12px; }
 .planner-meal-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); align-items: end; gap: 10px; }
 .planner-meal-compact-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 10px; }
 .planner-meal-header .form-field, .planner-meal-compact-row .form-field { min-width: 0; font-size: 12px; }
@@ -1210,6 +1212,7 @@ dialog.meal-suggestion-dialog::backdrop { background: #14251a66; }
 .recipe-core-card .recipe-editor > .core-muted { font-size: 12px; line-height: 1.35; }
 
 .planner-meal-popover { width: min(560px, calc(100vw - 24px)); }
+.core-create-popover, .core-activity-popover { z-index: 70; }
 .planner-meal-popover .planner-meal-form { margin-top: 10px; }
 .planner-meal-popover .recipe-step-editor { padding: 9px; gap: 8px; }
 .planner-core-recipe-options > button:disabled { opacity: .55; cursor: default; }
@@ -1292,7 +1295,7 @@ dialog.meal-suggestion-dialog::backdrop { background: #14251a66; }
   .core-activity-popover, .core-create-popover { left: max(8px, env(safe-area-inset-left)) !important; top: calc(var(--visible-top, 0px) + max(8px, env(safe-area-inset-top))) !important; width: calc(100% - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right))); max-height: calc(var(--visible-height, 100dvh) - var(--mobile-panel-bottom)); padding: 14px; scroll-padding-bottom: 20px; -webkit-overflow-scrolling: touch; }
   .core-dialog, .optional-ingredients-dialog, .ingredient-removal-dialog { width: calc(100% - 16px); max-height: calc(var(--visible-height, 100dvh) - 24px); padding: 16px; overscroll-behavior: contain; }
   .core-dialog-heading { position: sticky; top: -14px; background: white; z-index: 3; padding: 8px 0; }
-  .core-subtask { flex-wrap: nowrap; align-items: start; gap: 5px; }
+  .core-subtask { flex-wrap: wrap; align-items: start; gap: 5px; }
   .core-subtask:has(> .core-inline-panel) { flex-wrap: wrap; }
   .core-subtask-name { flex: 1; min-width: 0; }
   .core-subtask .core-inline-panel { flex-basis: 100%; }

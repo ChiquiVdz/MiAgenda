@@ -13,4 +13,5 @@ export type LocalCopy = {
   inbox: Feed; agenda: Feed; highlighted: Feed;
   calendars: CalendarView[]; pantry: PantrySnapshot; recipes: RecipeSnapshot;
   planners: PlannerSnapshot[]; shopping: ShoppingSnapshot; kitchenLedger?: KitchenLedger;
+  seriesFingerprints?: Record<string, string>;
 };

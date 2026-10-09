@@ -4,6 +4,7 @@ import { CoreError, invalid } from "./errors.ts";
 import { calendarImpact } from "./calendar-impact.ts";
 import { virtualAgenda } from "./series-runtime.ts";
 import { recurrenceInfo, previewFrequency } from "./series-frequency.ts";
+import { previewStop } from "./series-stop.ts";
 import { readActivities } from "./activity-reads.ts";
 
 function pageSize(value: number): number {
@@ -21,6 +22,7 @@ export class ActivityQueries {
   }
   async recurrencePreview(authenticatedUserId: string, raw: unknown) {
     const owner = uuid(authenticatedUserId), command = parseCommand(raw);
+    if(command.action==="stopRecurrence")return this.db.$transaction(tx=>previewStop(tx,owner,command),{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead,maxWait:10000,timeout:15000});
     if (command.action !== "changeRecurrence") invalid("Se esperaba un cambio de repetición.");
     return this.db.$transaction(tx => previewFrequency(tx, owner, command), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 10000, timeout: 15000 });
   }

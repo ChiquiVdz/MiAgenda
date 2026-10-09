@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-09T16:42:30.445Z",
+  "checks": [
+    "Prisma y SQL aislados: solo dos usuarios de prueba",
+    "Respuesta perdida mantiene cola",
+    "No descarta un lote de resultado incierto",
+    "Reintento conserva payload byte por byte",
+    "Reintento no duplica aplicación y vacía cola",
+    "Ningún usuario de prueba se creó en public"
+  ],
+  "failures": [],
+  "environment": "Chromium aislado, IndexedDB/Web Locks reales; servicios y migraciones reales en esquema temporal",
+  "publicFixtures": 0,
+  "temporarySchemaRemoved": true,
+  "limits": [
+    "No comprueba Safari/iPhone real ni los componentes visuales de React.",
+    "Las rutas HTTP del banco de pruebas delegan en los servicios reales, pero no ejercitan OAuth ni los handlers de Next."
+  ]
+}

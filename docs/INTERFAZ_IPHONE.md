@@ -1,6 +1,6 @@
 # Primera adaptación a iPhone
 
-Implementación: 8 de octubre de 2026. Bloque de interfaz aprobado por el usuario, sin almacenamiento offline, instalación ni publicación todavía. PROJECT.md mantiene sus reglas.
+Implementación inicial: 8 de octubre de 2026. La publicación, instalación y copia editable local ya existen. Este documento describe el bloque visual inicial; PRUEBA_IPHONE.md y CAMBIOS_LOCALES.md contienen el alcance vigente. PROJECT.md mantiene sus reglas.
 
 ## Cambios
 
@@ -24,9 +24,9 @@ Compilación de producción y TypeScript correctos. Recorrido visual local a 390
 
 ## Pendiente
 
-Safari y teclado en iPhone real, orientación horizontal y áreas seguras reales se revisan al habilitar acceso desde el dispositivo. La emulación de ancho no garantiza su comportamiento. Tampoco habilita PWA, uso sin conexión, sincronización diferida ni acceso fuera de localhost.
+Safari y teclado en iPhone real, orientación horizontal y áreas seguras reales requieren repetir la guía vigente desde el dispositivo. La emulación de ancho no garantiza su comportamiento. La emulación visual por sí sola no verifica la PWA, el uso sin conexión ni la sincronización diferida ya implementados.
 
-Siguiente bloque acordado: copia local para consulta e Inbox; publicación e instalación requieren sus propios pasos.
+Consultar PRUEBA_IPHONE.md para el recorrido actual con envío manual y el dominio publicado.
 
 ## Ajustes de densidad aprobados después
 

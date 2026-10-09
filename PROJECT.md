@@ -284,3 +284,33 @@ El siguiente bloque diseña el esquema físico y las migraciones sobre una base 
 - Correcciones manuales de existencias y recetas no sobrescriben cambios remotos sin decisión explícita. Ingredientes equivalentes detectados al enviar requieren elegir el existente; no fusionar por nombre automáticamente.
 - Mantener conectados cambios de serie, planes/horarios de comidas y operaciones delicadas del catálogo (retirar/fusionar/cambiar seguimiento). La copia y sus límites no equivalen a respaldo ni a un motor independiente de autoridad.
 - Alcance y revisión operativa vigentes: `docs/CAMBIOS_LOCALES.md`.
+
+### 19.8 Borrado local de principales recurrentes aprobado el 2026-10-09
+
+- Permitir «Solo esta», «Esta y las siguientes» y «Toda la serie» desde una principal recurrente, con confirmación previa. Los demás cambios de serie continúan conectados.
+- Ocultar de inmediato las instancias y sus hijos descargados según su fecha original, incluyendo excepciones movidas o modificadas. Al pulsar Actualizar, el servidor aplica el alcance también fuera de la copia local.
+- Deshacer el borrado completo antes de enviarlo restaura sus instancias y cambios anteriores. Un envío incierto debe confirmarse antes de permitir deshacerlo.
+- Si cambió la serie o cualquiera de sus instancias, preguntar «Borrar también la versión actual» o «Cancelar mi borrado y conservar servidor», sin alterar el límite original de «Esta y las siguientes».
+
+### 19.9 Contenido recurrente local aprobado el 2026-10-09
+
+- Permitir cambiar el nombre de la principal y agregar varias subtareas, renombrarlas o eliminarlas con los tres alcances, guardando localmente incluso conectado hasta Actualizar. Horarios, frecuencia y completados por alcance siguen conectados.
+- Identificar subtareas por su clave estable, aunque una instancia tenga otro nombre. Renombrar/eliminar omite las ausentes, sin recrearlas. Las nuevas comienzan pendientes y reabren las principales completadas del alcance, conservando las demás marcas y horarios.
+- Actualizar las instancias descargadas inmediatamente y las definiciones/instancias restantes al enviar. No crear infinitas repeticiones ni cambiar la identidad de los hijos al confirmar.
+- Ante cambios remotos, aplicar explícitamente el cambio a la versión actual o cancelarlo, conservando el límite original. Cancelar una alta también cancela las ediciones locales posteriores que dependan de esos hijos; no recrear una serie eliminada.
+
+### 19.10 Horarios recurrentes locales aprobados el 2026-10-09
+
+- Cambiar horarios de principales y programar, cambiar o quitar horarios de subtareas con los tres alcances se guarda localmente, incluso conectado, hasta Actualizar. Frecuencia y completado por alcance siguen conectados.
+- Cada principal conserva su fecha actual, incluso si fue movida; sin horario individual se usa su fecha original. Se aplica la nueva hora/duración y calendario sin mover los horarios propios de los hijos, que heredan el calendario.
+- Las subtareas usan hora/duración y diferencia de días respecto a la principal seleccionada al iniciar el cambio. Se omiten las eliminadas y se mantienen los horarios de las completadas; quitar horario de pendientes conserva casillas y marcas y desactiva Conservar/Destacar.
+- Guardar nombre y horario juntos es un comando atómico. Conservar el límite original y la diferencia de días al resolver conflictos explícitamente. Aplicar futuras definiciones al enviar sin materializar indefinidamente.
+- Quitar todas las fechas por alcance no se realiza silenciosamente. Usar el flujo explícito «Dejar de repetir y pasar a Inbox» descrito en 19.11.
+
+### 19.11 Finalizar repetición y progreso local aprobados el 2026-10-09
+
+- «Dejar de repetir y pasar a Inbox» conserva la identidad de la tarea elegida, sus subtareas, marcas y horarios propios de hijos. Quita la programación y Conservar/Destacar de la principal y la separa de la serie, sin copiarla a otra identidad.
+- Antes de confirmar, revisar la serie completa con conexión y sin pendientes previos; mostrar las futuras pendientes materializadas con cambios propios y ofrecer conservarlas como tareas independientes. Se conserva esa opción por defecto. La confirmación se guarda localmente y se envía al pulsar Actualizar.
+- Dejar de generar futuras pendientes desde la fecha de revisión, conservando las pasadas, completadas y progreso virtual previo como evidencia. No materializar indefinidamente ni borrar el historial. Las exclusiones originales permanecen para impedir que reaparezcan las tareas separadas. Las futuras modificadas no conservadas se retiran con sus hijos.
+- Completar/deshacer principales y subtareas recurrentes admite los tres alcances localmente. Una principal aplica a todos sus hijos; una subtarea se identifica por clave estable y solo cambia esa casilla, omitiendo ausentes y reconciliando la principal. Las otras marcas, nombres y horarios se conservan.
+- Persistir el momento de la acción local, limitado al presente al enviar. Conflictos de serie requieren aplicar explícitamente sobre la versión actual o cancelar; reconectar no envía automáticamente. La frecuencia sigue requiriendo conexión.

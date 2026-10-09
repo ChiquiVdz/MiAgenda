@@ -18,6 +18,7 @@ export type CoreCommand = { commandId: string; occurrence?: OccurrenceRef; scope
   ({ action: "addSubtasks"; children: { id: string; title: string }[] } & Target) |
   ({ action: "saveTask"; title?: string; schedule?: ScheduleInput | null; frequency?: { seriesId: string; ordinal: number; rule: RecurrenceRule; expectedDataRevision: string } } & Target) |
   ({ action: "changeRecurrence"; seriesId: string; ordinal: number; rule: RecurrenceRule; expectedDataRevision: string } & Target) |
+  ({ action: "stopRecurrence"; seriesId: string; ordinal: number; expectedDataRevision: string; preserveModified: boolean; effectiveDate: string } & Target) |
   ({ action: "setCompleted"; completed: boolean; optionalStepIds?: string[] } & Target) |
   ({ action: "setFlags"; keep?: boolean; highlighted?: boolean } & Target) |
   ({ action: "scheduleTask"; schedule: ScheduleInput } & Target) |
@@ -115,15 +116,16 @@ export function parseCommand(value: unknown): CoreCommand {
   let command = parseCommandBody(rest);
   if(command.action === "setCompleted" && command.optionalStepIds !== undefined && (occurrence !== undefined || scope !== undefined)) invalid("Los opcionales de comida no admiten alcances recurrentes.");
   if (scope !== undefined) {
-    if (!["this", "following", "all"].includes(String(scope)) || !["createTask", "addSubtasks", "editTask", "saveTask", "setCompleted", "deleteTask", "scheduleTask", "unscheduleTask", "changeRecurrence"].includes(command.action)) invalid("Alcance no admitido para esta acción.");
+    if (!["this", "following", "all"].includes(String(scope)) || !["createTask", "addSubtasks", "editTask", "saveTask", "setCompleted", "deleteTask", "scheduleTask", "unscheduleTask", "changeRecurrence","stopRecurrence"].includes(command.action)) invalid("Alcance no admitido para esta acción.");
     command = { ...command, scope: scope as SeriesScope };
   }
   if (scope && scope !== "this") command = { ...command, expectedSeriesRevision: revision(expectedSeriesRevision) };
   else if (expectedSeriesRevision !== undefined) invalid("La revisión de serie solo corresponde a un alcance de serie.");
   if (command.action === "changeRecurrence" && scope !== "following" && scope !== "all") invalid("Cambiar frecuencia requiere esta y siguientes o toda la serie.");
+  if (command.action === "stopRecurrence" && scope !== "following") invalid("Detener repetición requiere confirmar las futuras.");
   if (command.action === "saveTask" && command.frequency && scope !== "following" && scope !== "all") invalid("Cambiar frecuencia requiere esta y siguientes o toda la serie.");
   if (occurrence === undefined) return command;
-  if (!["editTask", "addSubtasks", "saveTask", "setCompleted", "setFlags", "scheduleTask", "unscheduleTask", "deleteTask", "createTask", "changeRecurrence"].includes(command.action)) invalid("No se admite referencia de ocurrencia en este comando.");
+  if (!["editTask", "addSubtasks", "saveTask", "setCompleted", "setFlags", "scheduleTask", "unscheduleTask", "deleteTask", "createTask", "changeRecurrence","stopRecurrence"].includes(command.action)) invalid("No se admite referencia de ocurrencia en este comando.");
   const ref = object(occurrence); fields(ref, ["seriesId", "ordinal", "seriesRevision"]);
   return { ...command, occurrence: { seriesId: uuid(ref.seriesId), ordinal: revision(ref.ordinal), seriesRevision: revision(ref.seriesRevision) } };
 }
@@ -198,6 +200,10 @@ function parseCommandBody(value: unknown): CoreCommand {
         ...("description" in input ? { description: description(input.description) } : {}),
         ...("position" in input ? { position: revision(input.position) } : {}) };
     }
+    case "stopRecurrence":
+      fields(input,[...base,"expectedRevision","seriesId","ordinal","expectedDataRevision","preserveModified","effectiveDate"]);
+      if(typeof input.expectedDataRevision!=="string"||!/^\d{1,20}$/.test(input.expectedDataRevision))invalid("Revisión de datos inválida.");
+      return {...target,action,seriesId:uuid(input.seriesId),ordinal:revision(input.ordinal),expectedDataRevision:input.expectedDataRevision,preserveModified:bool(input.preserveModified),effectiveDate:dateOnly(input.effectiveDate)};
     case "setCompleted":
       fields(input, [...base, "expectedRevision", "completed", "optionalStepIds"]);
       if (input.optionalStepIds !== undefined && (!Array.isArray(input.optionalStepIds) || input.optionalStepIds.length > 600)) invalid("Opcionales inválidos.");

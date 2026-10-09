@@ -14,6 +14,8 @@ import type { KitchenSnapshot } from "../../../reconstruction/core/src/local-kit
 import { projectKitchen, projectKitchenOperations, supportsKitchenLocally } from "./local-kitchen";
 import { normalizedIngredientName, similarIngredientName } from "../../../reconstruction/core/src/ingredient-input";
 import { mergeTaskRows, projectTask, projectTasks, rootFor, taskGuard, taskRows } from "./local-tasks";
+import { prepareSeriesChildIds } from "./local-series";
+import { localParts } from "../../../reconstruction/core/src/local-time";
 
 const DB = "miagenda-local-v1", STORE = "account";
 export const localEvent = "miagenda:local-copy";
@@ -24,7 +26,7 @@ let extra = new Map<string, unknown>();
 let base: LocalCopy | null = null, outbox: LocalOperation[] = [], batch: LocalBatch | null = null;
 let kitchenOutbox:KitchenOperation[]=[], kitchenBatch:KitchenBatch|null=null, receiptIds:Record<string,string>={};
 type KitchenIssue={snapshot:KitchenSnapshot;message:string};
-type Conflict = { rootId: string; item: ActivityView | null; missingCalendarId?: string; deleting?:boolean };
+type Conflict = { rootId: string; item: ActivityView | null; missingCalendarId?: string; deleting?:boolean; seriesDeletion?:boolean; seriesChange?:boolean };
 type LocalDraft = CoreCommand extends infer C ? C extends { commandId: string } ? Omit<C, "commandId"> : never : never;
 let state = { online: true, busy: false, message: "", newer: false, ready: false, range: "", shellReady: false, pending: 0, pendingIds: [] as string[], conflict: null as Conflict | null, kitchenConflict:null as KitchenIssue|null, deletions:[] as {id:string;title:string}[], accountBlocked: false, reauth: false };
 const listeners = new Set<() => void>();
@@ -38,7 +40,7 @@ export function setShellReady(shellReady: boolean) { publish({ shellReady }); }
 export function pendingTask(id: string) { return state.pendingIds.includes(id); }
 function pendingState() {
   publish({pending:outbox.length+kitchenOutbox.length,
-    deletions:outbox.filter(op=>op.command.action==="deleteTask"&&op.command.id===op.rootId).map(op=>({id:op.command.commandId,title:(base?taskRows(base).get(op.rootId)?.title:null)??outbox.flatMap(i=>i.command.action==="createTask"&&i.command.id===op.rootId?[i.command.title]:[])[0]??"Tarea eliminada"})),
+    deletions:outbox.filter(op=>op.command.action==="deleteTask"&&op.command.id===op.rootId).map(op=>({id:op.command.commandId,title:((base?taskRows(base).get(op.rootId)?.title:null)??outbox.flatMap(i=>i.command.action==="createTask"&&i.command.id===op.rootId?[i.command.title]:[])[0]??"Tarea eliminada")+(op.seriesDeletion ? op.command.scope==="all" ? " · Toda la serie" : " · Esta y las siguientes" : "")})),
     pendingIds:[...new Set([...outbox.flatMap(op=>[op.rootId,op.command.id,...(op.command.action==="addSubtasks"?op.command.children.map(child=>child.id):[])]),...kitchenOutbox.flatMap(op=>"id" in op.command?[op.command.id]:[])])],
   });
 }
@@ -50,10 +52,10 @@ async function exclusive<T>(work: () => Promise<T>): Promise<T> {
   return navigator.locks.request("miagenda:private-copy", work);
 }
 function changed() { window.dispatchEvent(new CustomEvent(localEvent, { detail: { remount: false } })); window.dispatchEvent(new Event("miagenda:local-range")); }
-async function commitTasks(nextBase: LocalCopy, nextOps: LocalOperation[], nextBatch: LocalBatch | null, nextConflict: Conflict | null = state.conflict) {
+async function commitTasks(nextBase: LocalCopy, nextOps: LocalOperation[], nextBatch: LocalBatch | null, nextConflict: Conflict | null = state.conflict, nextExtra = extra) {
   const next = projectKitchenOperations(projectTasks(nextBase, nextOps), kitchenOutbox);
-  await record({ copy: next, base: nextBase, extra: [...extra], outbox: nextOps, batch: nextBatch, conflict: nextConflict, kitchenOutbox,kitchenBatch,receiptIds,kitchenConflict:state.kitchenConflict });
-  base = nextBase; copy = next; outbox = nextOps; batch = nextBatch;
+  await record({ copy: next, base: nextBase, extra: [...nextExtra], outbox: nextOps, batch: nextBatch, conflict: nextConflict, kitchenOutbox,kitchenBatch,receiptIds,kitchenConflict:state.kitchenConflict });
+  base = nextBase; copy = next; outbox = nextOps; batch = nextBatch; extra = nextExtra;
   publish({ conflict: nextConflict }); pendingState(); changed();
   return next;
 }
@@ -94,7 +96,7 @@ async function enqueueKitchen(raw:unknown):Promise<Response>{
   });
 }
 export async function undoPendingDeletion(commandId:string){
-  return exclusive(async()=>{await restoreLocalCopy();if(!base||state.busy)return;if(batch?.operations.some(op=>op.command.commandId===commandId))throw new Error("Este borrado ya se envió y falta confirmarlo. Pulsa Actualizar antes de continuar.");await commitTasks(base,outbox.filter(op=>op.command.commandId!==commandId),batch);});
+  return exclusive(async()=>{await restoreLocalCopy();if(!base||state.busy)return;if(batch?.operations.some(op=>op.command.commandId===commandId))throw new Error("Este borrado ya se envió y falta confirmarlo. Pulsa Actualizar antes de continuar.");const removed=outbox.find(op=>op.command.commandId===commandId);await commitTasks(base,outbox.filter(op=>op.command.commandId!==commandId),batch,state.conflict?.rootId===removed?.rootId?null:state.conflict);});
 }
 async function synchronizeKitchen(){
   return exclusive(async()=>{
@@ -169,11 +171,15 @@ export async function resolveKitchenConflict(choice:"mine"|"server",existingIngr
 
 async function database() {
   return new Promise<IDBDatabase>((resolve, reject) => {
+    let blocked = false;
     // Version fence: old read-only clients must not overwrite a durable outbox.
-    const request = indexedDB.open(DB, 3);
+    const request = indexedDB.open(DB, 7);
     request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE); };
-    request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
-    request.onerror = () => reject(new Error("No pudimos abrir el almacenamiento del dispositivo."));
+    request.onsuccess = () => { if (blocked) { request.result.close(); return; } request.result.onversionchange = () => request.result.close(); resolve(request.result); };
+    request.onerror = () => reject(new Error(request.error?.name === "VersionError"
+      ? "Esta pantalla es anterior a la copia guardada. Cierra MiAgenda y vuelve a abrirla con conexión para actualizar la aplicación. No borres los datos del sitio."
+      : "No pudimos abrir el almacenamiento del dispositivo. Revisa que el navegador permita guardar datos del sitio."));
+    request.onblocked = () => { blocked = true; reject(new Error("Otra pestaña mantiene una versión anterior de MiAgenda. Ciérrala y vuelve a intentar; tus cambios guardados se conservan.")); };
   });
 }
 async function record(value?: SavedRecord | null) {
@@ -194,7 +200,7 @@ export async function restoreLocalCopy() {
   const version = epoch;
   let saved;
   try { saved = await record(); }
-  catch (cause) { publish({ message: "No pudimos abrir el almacenamiento local. Revisa que este navegador permita guardar datos del sitio." }); throw cause; }
+  catch (cause) { publish({ message: cause instanceof Error ? cause.message : "No pudimos abrir el almacenamiento local. Revisa que este navegador permita guardar datos del sitio." }); throw cause; }
   if (version !== epoch) return copy;
   if (saved?.copy.format === 1) {
     copy = saved.copy; base = saved.base ?? saved.copy; outbox = saved.outbox ?? []; batch = saved.batch ?? null; kitchenOutbox=saved.kitchenOutbox??[];kitchenBatch=saved.kitchenBatch??null;receiptIds=saved.receiptIds??{}; extra = new Map(saved.extra ?? []);
@@ -299,13 +305,25 @@ async function enqueueTask(raw: unknown): Promise<Response> {
     const previous = outbox.find(op => op.command.commandId === command.commandId);
     if (previous) {
       if (JSON.stringify(previous.command) !== JSON.stringify(command)) throw new Error("Este intento ya contiene otro cambio.");
+      if(previous.seriesDeletion||previous.seriesChange){const before=projectTasks(base,outbox.slice(0,outbox.indexOf(previous)));return Response.json({...projectTask(before,previous).result,localPending:true});}
       const root = taskRows(copy).get(previous.rootId);
       const beforeDeletion=command.action==="deleteTask"&&command.id===previous.rootId?taskRows(projectTasks(base,outbox.slice(0,outbox.indexOf(previous)))).get(previous.rootId):null;
       const removedIds=command.action==="deleteTask"?[command.id,...(beforeDeletion?.children.map(child=>child.id)??[])]:[];
       return Response.json({ activities: root ? [root, ...root.children.map(c => ({ ...c, children: [] }))] : [], removedIds, calendars: [], dataRevision: copy.dataRevision, localPending: true });
     }
     if (outbox.length >= 500) throw new Error("Tienes 500 cambios pendientes. Sincroniza antes de agregar más.");
+    if(command.action==="stopRecurrence"&&(outbox.length||kitchenOutbox.length||command.expectedDataRevision!==base.dataRevision))throw new Error("La copia cambió desde la revisión. Pulsa Actualizar y revisa de nuevo antes de dejar de repetir.");
     const operation: LocalOperation = { command, rootId: rootFor(copy, command), at: new Date().toISOString() };
+    if(command.scope&&command.scope!=="this"){
+      const rows=taskRows(copy),root=rows.get(operation.rootId),target=command.action==="createTask"?root:rows.get(command.id),ref=root?.recurrence;
+      if(!root||root.parentId||!ref||!target)throw new Error("Descarga primero la tarea principal para cambiar su serie sin conexión.");
+      const fingerprint=base.seriesFingerprints?.[ref.seriesId];
+      if(!fingerprint||!ref.originalDate)throw new Error("Pulsa Actualizar con conexión para preparar los cambios de esta serie sin conexión.");
+      const fence={seriesId:ref.seriesId,fingerprint,fromDate:command.action==="stopRecurrence"?command.effectiveDate:command.scope==="all"?null:ref.originalDate};
+      if(command.action==="deleteTask"&&!target.parentId)operation.seriesDeletion=fence;
+      else operation.seriesChange=await prepareSeriesChildIds(copy,operation,{...fence,stepKeyId:target.parentId?target.stepKeyId??target.id:null,anchorDate:root.schedule?.mode==="timed"?localParts(root.schedule.startsAt!,root.schedule.timeZone).date:root.schedule?.startDate??ref.originalDate});
+    }
+    if(new TextEncoder().encode(JSON.stringify(operation)).byteLength>55000)throw new Error("Este cambio abarca demasiadas subtareas o instancias descargadas. Agrega menos pasos por vez o reduce el alcance.");
     const projected = projectTask(copy, operation);
     if ((taskRows(projected.copy).get(operation.rootId)?.children.length ?? 0) > 500) throw new Error("Esta tarea tiene demasiadas subtareas para editarla sin conexión.");
     await commitTasks(base, [...outbox, operation], batch);
@@ -325,7 +343,8 @@ export async function synchronizeLocalTasks() {
     try {
       while (outbox.length) {
         if (!batch) {
-          const operations = outbox.slice(0, 30), commandId = crypto.randomUUID();
+          const deletionIndex=outbox.findIndex(op=>op.seriesDeletion||op.seriesChange);
+          const operations = outbox.slice(0, deletionIndex===0 ? 1 : deletionIndex>0 ? Math.min(30,deletionIndex) : 30), commandId = crypto.randomUUID();
           let draft: LocalBatch;
           do {
             draft = { commandId, operations: [...operations], guards: [...new Set(operations.map(op => op.rootId))].map(id => taskGuard(base!, id)) };
@@ -344,13 +363,29 @@ export async function synchronizeLocalTasks() {
         if (!response.ok) {
           if (response.status === 401) publish({ reauth: true });
           if (result.error === "ACCOUNT_CHANGED") publish({ accountBlocked: true });
-          if (response.status === 409 && result.error === "LOCAL_CONFLICT") await commitTasks(base, outbox, null, { rootId: result.rootId, item: result.item, missingCalendarId: result.missingCalendarId, deleting:outbox.some(op=>op.rootId===result.rootId&&op.command.action==="deleteTask"&&op.command.id===result.rootId) });
+          if (response.status === 409 && result.error === "LOCAL_CONFLICT") await commitTasks(base, outbox, null, { rootId: result.rootId, item: result.item, missingCalendarId: result.missingCalendarId, seriesDeletion:result.seriesDeletion===true,seriesChange:result.seriesChange===true, deleting:outbox.some(op=>op.rootId===result.rootId&&op.command.action==="deleteTask"&&op.command.id===result.rootId) });
           else if (response.status === 400) await commitTasks(base, outbox, null); // Definitively rejected before a commit; safe to discard later.
           throw new Error(result.message ?? "No pudimos confirmar el envío. Reintenta Actualizar.");
         }
         if (!Array.isArray(result.activities) || !Array.isArray(result.removedIds) || typeof result.dataRevision !== "string") throw new Error("Respuesta incierta. Reintenta Actualizar con el mismo lote.");
         const ids = new Set(sent.operations.map(op => op.command.commandId));
-        const nextBase = mergeTaskRows(base, result.activities, result.removedIds);
+        const localRemoved:string[]=[];
+        let before=base;
+        for(const op of sent.operations){const projected=projectTask(before,op);localRemoved.push(...projected.result.removedIds);before=projected.copy;}
+        let nextBase = mergeTaskRows(before, result.activities, [...result.removedIds,...localRemoved]);
+        if(result.seriesRevisions){
+          const revisions=result.seriesRevisions as Record<string,number>;
+          const revised=[...taskRows(nextBase).values()].map(row=>row.recurrence&&revisions[row.recurrence.seriesId]!==undefined?{...row,recurrence:{...row.recurrence,seriesRevision:revisions[row.recurrence.seriesId]},children:row.children.map(child=>({...child,recurrence:child.recurrence?{...child.recurrence,seriesRevision:revisions[child.recurrence.seriesId]??child.recurrence.seriesRevision}:null}))}:row);
+          nextBase=mergeTaskRows(nextBase,revised);
+        }
+        nextBase.seriesFingerprints={...base.seriesFingerprints,...result.seriesFingerprints};
+        const remaining=outbox.filter(op=>!ids.has(op.command.commandId)).map(op=>{
+          const ref=op.seriesDeletion??op.seriesChange;
+          if(!ref||result.baseSeriesFingerprints?.[ref.seriesId]!==ref.fingerprint||!result.seriesFingerprints?.[ref.seriesId])return op;
+          return op.seriesDeletion?{...op,seriesDeletion:{...op.seriesDeletion,fingerprint:result.seriesFingerprints[ref.seriesId]}}:{...op,seriesChange:{...op.seriesChange!,fingerprint:result.seriesFingerprints[ref.seriesId]}};
+        });
+        let projectedRemaining=nextBase;
+        for(const op of remaining){if(op.seriesChange)op.seriesChange=await prepareSeriesChildIds(projectedRemaining,op,op.seriesChange);projectedRemaining=projectTask(projectedRemaining,op).copy;}
         // Other-device changes are NOT downloaded implicitly. Keep the snapshot's revision
         // unless the server confirmed we started with exactly this complete snapshot.
         if (result.baseDataRevision === base.dataRevision) {
@@ -363,7 +398,7 @@ export async function synchronizeLocalTasks() {
           nextBase.shopping = { ...nextBase.shopping, dataRevision: result.dataRevision };
           nextBase.planners = nextBase.planners.map(item => ({ ...item, dataRevision: result.dataRevision }));
         } else publish({ newer: true });
-        await commitTasks(nextBase, outbox.filter(op => !ids.has(op.command.commandId)), null, null);
+        await commitTasks(nextBase, remaining, null, null);
       }
       publish({ reauth: false, message: "Cambios enviados. Preparando la actualización de tu copia." });
     } catch (cause) {
@@ -388,6 +423,39 @@ export async function resolveLocalConflict(choice: "mine" | "server", replacemen
     await restoreLocalCopy();
     const conflict = state.conflict;
     if (!base || !copy || !conflict) return;
+    if(conflict.seriesDeletion||conflict.seriesChange){
+      const deletion=outbox.find(op=>op.rootId===conflict.rootId&&(op.seriesDeletion||op.seriesChange));
+      const fence=deletion?.seriesDeletion??deletion?.seriesChange;
+      if(!deletion||!fence)throw new Error("El cambio pendiente ya no está disponible.");
+      if(!navigator.onLine)throw new Error("Conéctate para revisar la versión actual de la serie. Tu cambio sigue guardado aquí.");
+      const version=epoch,ownerId=copy.ownerId;
+      const response=await fetch(`/api/core/local?seriesId=${fence.seriesId}`,{cache:"no-store"}),fresh=await response.json();
+      if(!response.ok)throw new Error(fresh.message??"No pudimos revisar la serie. Conservamos el borrado pendiente.");
+      if(version!==epoch||fresh.format!==1||fresh.ownerId!==ownerId)throw new Error("La cuenta cambió. Entra con la cuenta original antes de continuar.");
+      const downloaded=fresh as LocalCopy,seriesId=fence.seriesId,fingerprint=downloaded.seriesFingerprints?.[seriesId];
+      // Rebase only this family. Other pending roots retain their original guards
+      // so choosing this deletion cannot silently accept unrelated remote edits.
+      const protectedRoots=new Set(outbox.filter(op=>op.command.commandId!==deletion.command.commandId&&!op.seriesChange&&!op.seriesDeletion).map(op=>op.rootId));
+      const replaceable=(row:ActivityView)=>row.recurrence?.seriesId===seriesId&&!protectedRoots.has(row.parentId??row.id);
+      const oldFamily=[...taskRows(base).values()].filter(replaceable);
+      const currentFamily=[...taskRows(downloaded).values()].filter(replaceable);
+      const next=mergeTaskRows(base,currentFamily,oldFamily.filter(row=>!currentFamily.some(current=>current.id===row.id)).map(row=>row.id));
+      next.seriesFingerprints={...base.seriesFingerprints,...(fingerprint?{[seriesId]:fingerprint}:{})};
+      const currentSeries=await fetch(`/api/core/local?fingerprints=${seriesId}`,{cache:"no-store"});
+      if(!currentSeries.ok)throw new Error("No pudimos confirmar el estado de la serie. Reintenta sin descartar tus cambios.");
+      const confirmed=await currentSeries.json();
+      if(confirmed.ownerId!==ownerId||confirmed.dataRevision!==downloaded.dataRevision||confirmed.seriesFingerprints?.[seriesId]!==fingerprint)throw new Error("La serie volvió a cambiar. Reintenta revisar antes de elegir.");
+      if(conflict.seriesChange&&choice==="mine"&&!confirmed.activeSeries?.includes(seriesId))throw new Error("La serie fue eliminada. Cancela este cambio para conservar el servidor; no recrearemos sus actividades.");
+      const addedKeys=new Set(choice==="server"?(deletion.command.action==="addSubtasks"?deletion.command.children.map(child=>child.id):deletion.command.action==="createTask"?[deletion.command.id]:[]):[]);
+      const localRows=taskRows(copy);
+      const dependent=(op:LocalOperation)=>op.seriesChange?.stepKeyId?addedKeys.has(op.seriesChange.stepKeyId):addedKeys.has(localRows.get(op.command.id)?.stepKeyId??op.command.id);
+      const remaining:LocalOperation[]=outbox.flatMap(op=>op.command.commandId!==deletion.command.commandId?dependent(op)?[]:[{...op}]:choice==="mine"&&fingerprint?[{...op,command:{...op.command,commandId:crypto.randomUUID()},...(op.seriesDeletion?{seriesDeletion:{...op.seriesDeletion,fingerprint}}:{seriesChange:{...op.seriesChange!,fingerprint}})}]:[]);
+      let rebased=next;
+      for(const op of remaining){if(op.seriesChange)op.seriesChange=await prepareSeriesChildIds(rebased,op,op.seriesChange);rebased=projectTask(rebased,op).copy;}
+      await commitTasks(next,remaining,null,null,new Map());
+      publish({newer:true,message:choice==="mine"&&fingerprint?"Conservamos el alcance del cambio sobre la versión actual. Pulsa Actualizar para enviarlo.":"Cancelamos este cambio y conservamos la versión del servidor."});
+      return;
+    }
     const desired = taskRows(copy).get(conflict.rootId);
     const deleting=outbox.some(op=>op.rootId===conflict.rootId&&op.command.action==="deleteTask"&&op.command.id===conflict.rootId);
     const schedulingIds = new Set(outbox.filter(op => op.rootId === conflict.rootId && (op.command.action === "scheduleTask" || op.command.action === "unscheduleTask" || "schedule" in op.command && op.command.schedule !== undefined)).map(op => op.command.id));
@@ -495,7 +563,7 @@ export async function coreFetch(input: string, init?: RequestInit): Promise<Resp
         const ingredient=copy.pantry.ingredients.find(i=>i.id===raw.id);
         if((raw.action!=="setIngredientTracking"||raw.mode===ingredient?.trackingMode)&&supportsKitchenLocally(copy,raw))return await enqueueKitchen(raw);
       }
-      const command = ["createTask", "saveTask", "editTask", "addSubtasks", "setCompleted", "deleteTask", "scheduleTask", "unscheduleTask"].includes(raw?.action) ? parseCommand(raw) : null;
+      const command = ["createTask", "saveTask", "editTask", "addSubtasks", "setCompleted", "deleteTask", "scheduleTask", "unscheduleTask","stopRecurrence"].includes(raw?.action) ? parseCommand(raw) : null;
       if (command && localTaskCommand(command)) {
         const row = taskRows(copy).get(command.action === "createTask" ? command.parentId ?? command.id : command.id);
         if (command.action === "createTask" && !command.parentId || row?.kind === "task" && !row.mealRole || outbox.some(op=>op.command.commandId===command.commandId)) return await enqueueTask(command);
@@ -553,6 +621,14 @@ export async function downloadRequestedDates() {
     if (version !== epoch || ownerId !== copy?.ownerId) return;
     if (result.dataRevision !== copy.dataRevision) { publish({ newer: true }); throw new Error("Hay cambios nuevos. Actualiza la copia antes de descargar otras fechas."); }
     if (result.nextAfterId) throw new Error("Hay más actividades de las que caben en esta descarga. Consulta un intervalo menor.");
+    const seriesIds: string[]=Array.isArray(result.items)?[...new Set((result.items as ActivityView[]).flatMap(item=>item.recurrence?[item.recurrence.seriesId]:[]))]:[];
+    let seriesFingerprints=base?.seriesFingerprints??{};
+    if(seriesIds.length){
+      const metadataResponse=await fetch(`/api/core/local?fingerprints=${seriesIds.join(",")}`,{cache:"no-store"}),metadata=await metadataResponse.json();
+      if(!metadataResponse.ok)throw new Error(metadata.message??"No pudimos preparar las series descargadas.");
+      if(metadata.ownerId!==ownerId||metadata.dataRevision!==copy.dataRevision)throw new Error("Los datos cambiaron. Pulsa Actualizar antes de descargar estas fechas.");
+      seriesFingerprints={...seriesFingerprints,...metadata.seriesFingerprints};
+    }
     const updated = new Map(extra); updated.set(query, result);
     while (updated.size > 8) updated.delete(updated.keys().next().value!);
     while (new TextEncoder().encode(JSON.stringify([...updated])).byteLength > 4 * 1024 * 1024) {
@@ -561,6 +637,7 @@ export async function downloadRequestedDates() {
     }
     if (outbox.length || kitchenOutbox.length) throw new Error("Sincroniza los cambios pendientes antes de descargar otras fechas.");
     const nextBase = Array.isArray(result.items) ? mergeTaskRows(base ?? copy, result.items) : base ?? copy;
+    nextBase.seriesFingerprints=seriesFingerprints;
     await record({ copy: nextBase, base: nextBase, extra: [...updated] }); extra = updated; base = nextBase; copy = nextBase;
     publish({ range: "", message: "Fechas descargadas." });
     window.dispatchEvent(new Event("miagenda:local-range"));

@@ -1,0 +1,34 @@
+{
+  "at": "2026-10-09T16:47:13.685Z",
+  "checks": [
+    "Prisma y SQL aislados: solo dos usuarios de prueba",
+    "Compras offline usa cantidad corregida y solo planes con Cocinar",
+    "Ingrediente por disponibilidad aparece sin gramos inventados",
+    "Preparación previa offline no consume ni completa la comida",
+    "Compra local suma cantidades elegidas y marca disponibilidad",
+    "Finalizar exige elegir opcionales y el rechazo no cambia inventario",
+    "Completar local descuenta cantidades exactas una sola vez",
+    "Agenda y Planificar comparten completado; disponibilidad no se descuenta",
+    "Segunda comida usa sobras reales sin descontar ingredientes",
+    "Dependencia de sobras muestra motivo y conserva marcas e inventario",
+    "Deshacer en orden devuelve cantidades y conserva preparación previa",
+    "Deshacer una compra todavía sin enviar restaura faltante",
+    "Edición local del recetario conserva versión y cantidades del plan",
+    "Cocina completa persiste tras cerrar sin conexión",
+    "Enviar confirma compras, deshacer y recetas sin duplicar",
+    "Servidor mantiene preparación realizada y comidas pendientes",
+    "El plan confirmado sigue en su versión anterior",
+    "Conflicto de stock conserva Cocina pendiente y confirma tarea sin pisar stock",
+    "Usar Cocina del servidor conserva la tarea ya confirmada",
+    "Tarea ajena al conflicto se confirma normalmente",
+    "Ningún usuario de prueba se creó en public"
+  ],
+  "failures": [],
+  "environment": "Chromium aislado, IndexedDB/Web Locks reales; servicios y migraciones reales en esquema temporal",
+  "publicFixtures": 0,
+  "temporarySchemaRemoved": true,
+  "limits": [
+    "No comprueba Safari/iPhone real ni los componentes visuales de React.",
+    "Las rutas HTTP del banco de pruebas delegan en los servicios reales, pero no ejercitan OAuth ni los handlers de Next."
+  ]
+}

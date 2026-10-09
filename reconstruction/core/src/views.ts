@@ -69,6 +69,9 @@ export function activityView(activity: ViewRow, availabilityIds: ReadonlySet<str
 }
 export type ActivityView = ReturnType<typeof activityView>;
 export type CommandResult = {
+  seriesRevisions?: Record<string, number>;
+  seriesFingerprints?: Record<string, string>;
+  baseSeriesFingerprints?: Record<string, string>;
   baseDataRevision?: string;
   activities: ActivityView[];
   removedIds: string[];

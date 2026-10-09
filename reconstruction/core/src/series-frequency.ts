@@ -11,7 +11,7 @@ type Tx = Prisma.TransactionClient;
 type Change = Extract<CoreCommand, { action: "changeRecurrence" }>;
 const include = { steps: true, series: { include: { retiredRanges: true } } } as const;
 
-async function context(tx: Tx, userId: string, seriesId: string, ordinal: number) {
+export async function recurrenceContext(tx: Tx, userId: string, seriesId: string, ordinal: number) {
   const family = await tx.recurrenceSeries.findFirst({ where: { id: seriesId, userId, retiredAt: null } });
   if (!family) throw new CoreError("NOT_FOUND", "La serie ya no está disponible.");
   const segments = await tx.seriesSegment.findMany({ where: { userId, seriesId }, include, orderBy: { fromOrdinal: "asc" } });
@@ -28,16 +28,17 @@ async function context(tx: Tx, userId: string, seriesId: string, ordinal: number
   const pattern = segments.filter(segment => !segment.protectedOnly).sort((a, b) => a.ordinalOffset > b.ordinalOffset ? -1 : a.ordinalOffset < b.ordinalOffset ? 1 : a.fromOrdinal > b.fromOrdinal ? -1 : 1)[0] ?? selected;
   return { family, segments, selected, pattern, own, overrides, rules, originalDate, today };
 }
+const context = recurrenceContext;
 
 export async function recurrenceInfo(tx: Tx, userId: string, seriesId: string, ordinal: number) {
   const value = await context(tx, userId, seriesId, ordinal);
   const owner = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { dataRevision: true } });
   return { rule: storedRule(value.pattern.rrule, value.pattern.untilDate, value.pattern.anchorLocal),
-    originalDate: value.originalDate, anchorDate: value.pattern.anchorLocal.slice(0, 10),
+    today:value.today, originalDate: value.originalDate, anchorDate: value.pattern.anchorLocal.slice(0, 10),
     seriesRevision: value.family.revision, dataRevision: owner.dataRevision.toString() };
 }
 
-function protectedRanges(segment: Awaited<ReturnType<typeof context>>["segments"][number], rules: Awaited<ReturnType<typeof context>>["rules"], boundary: bigint) {
+export function protectedRanges(segment: Awaited<ReturnType<typeof context>>["segments"][number], rules: Awaited<ReturnType<typeof context>>["rules"], boundary: bigint) {
   const end = segmentEnd(segment);
   const boundaries = [...new Set([boundary, end, ...rules.flatMap(rule => [rule.fromOrdinal, ...(rule.toOrdinal === null ? [] : [rule.toOrdinal])]).filter(value => value > boundary && value < end)])].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
   const ranges: { from: number; to: number }[] = [];

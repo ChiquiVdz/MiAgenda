@@ -41,7 +41,7 @@ export function useCoreFeed(initial: Feed, query: string, accepts: (item: Activi
     }
   }
 
-  async function load(afterId?: string) {
+  async function load(afterId?: string, preserveError = false) {
     if (write.current || attempt.current) { pendingRead.current = true; return; }
     controller.current?.abort();
     const abort = new AbortController(); controller.current = abort;
@@ -55,7 +55,7 @@ export function useCoreFeed(initial: Feed, query: string, accepts: (item: Activi
       if (version !== generation.current || BigInt(result.dataRevision) < BigInt(revision.current)) return;
       // A cursor belongs to its snapshot. Never append a newer page to stale rows.
       if (afterId && result.dataRevision !== revision.current) { void load(); return; }
-      revision.current = result.dataRevision; setError(null);
+      revision.current = result.dataRevision; if (!preserveError) setError(null);
       setData(current => ({ ...result, items: afterId
         ? [...current.items, ...result.items.filter((item: ActivityView) => !current.items.some(old => old.id === item.id))]
         : result.items }));
@@ -93,7 +93,7 @@ export function useCoreFeed(initial: Feed, query: string, accepts: (item: Activi
     } catch (cause) { setRetry(Boolean(attempt.current)); setError(cause instanceof Error ? cause.message : "No pudimos guardar."); }
     finally {
       write.current = false; setBusy(false);
-      if (pendingRead.current && !attempt.current) { pendingRead.current = false; void load(); }
+      if (pendingRead.current && !attempt.current) { pendingRead.current = false; void load(undefined, true); }
     }
   }
   const mutate: Mutate = async (command, success) => {

@@ -8,8 +8,8 @@ export function usePlannerFeed(initial:PlannerSnapshot,start:string,days:number,
   const localStatus=useLocalStatus();
   const [data,setData]=useState(initial),[busy,setBusy]=useState(false),[reading,setReading]=useState(false),[error,setError]=useState<string|null>(null),[retry,setRetry]=useState(false);
   const writing=useRef(false),attempt=useRef<Attempt|null>(null),controller=useRef<AbortController|null>(null),generation=useRef(0),pending=useRef(false),revision=useRef(initial.dataRevision),range=useRef({start,days}),initialized=useRef(false);range.current={start,days};
-  async function load(){if(writing.current||attempt.current){pending.current=true;return;}controller.current?.abort();const abort=new AbortController();controller.current=abort;const version=++generation.current;setReading(true);
-    try{const response=await coreFetch(`/api/core?${new URLSearchParams({view:"planner",start:range.current.start,days:String(range.current.days)})}`,{cache:"no-store",signal:abort.signal}),result=await response.json();if(!response.ok)throw new Error(result.message??"No pudimos actualizar Planificar.");if(version!==generation.current||BigInt(result.dataRevision)<BigInt(revision.current))return;revision.current=result.dataRevision;setError(null);setData(result);return result as PlannerSnapshot;}
+  async function load(preserveError=false){if(writing.current||attempt.current){pending.current=true;return;}controller.current?.abort();const abort=new AbortController();controller.current=abort;const version=++generation.current;setReading(true);
+    try{const response=await coreFetch(`/api/core?${new URLSearchParams({view:"planner",start:range.current.start,days:String(range.current.days)})}`,{cache:"no-store",signal:abort.signal}),result=await response.json();if(!response.ok)throw new Error(result.message??"No pudimos actualizar Planificar.");if(version!==generation.current||BigInt(result.dataRevision)<BigInt(revision.current))return;revision.current=result.dataRevision;if(!preserveError)setError(null);setData(result);return result as PlannerSnapshot;}
     catch(cause){if(!abort.signal.aborted)setError(cause instanceof Error?cause.message:"No pudimos actualizar.");}finally{if(controller.current===abort){controller.current=null;setReading(false);}}
   }
   async function send(value:Attempt){if(writing.current)return;writing.current=true;attempt.current=value;++generation.current;controller.current?.abort();controller.current=null;setReading(false);setBusy(true);setError(null);
@@ -19,7 +19,7 @@ export function usePlannerFeed(initial:PlannerSnapshot,start:string,days:number,
       // A dialog that closes into Agenda lets that surface refresh once instead
       // of also downloading a full planner snapshot that will be discarded.
       revision.current=BigInt(result.dataRevision)>BigInt(revision.current)?result.dataRevision:revision.current;attempt.current=null;setRetry(false);pending.current=refreshAfterWrite||value.command.action==="initializeKitchen";value.success?.();
-    }catch(cause){setRetry(!!attempt.current);setError(cause instanceof Error?cause.message:"No pudimos guardar.");}finally{writing.current=false;setBusy(false);if(pending.current&&!attempt.current){pending.current=false;void load();}}
+    }catch(cause){setRetry(!!attempt.current);setError(cause instanceof Error?cause.message:"No pudimos guardar.");}finally{writing.current=false;setBusy(false);if(pending.current&&!attempt.current){pending.current=false;void load(true);}}
   }
   async function mutate(command:PlannerDraft,success?:()=>void){if(!writing.current&&!attempt.current)await send({command:{...command,commandId:crypto.randomUUID()},success});}
   useEffect(()=>{if(data.start!==start||data.days!==days)void load(); // Initial SSR already supplies the first range.

@@ -4,6 +4,7 @@ import type { ActivityView } from "../../../reconstruction/core/src/views";
 import type { SeriesScope } from "../../../reconstruction/core/src/contracts";
 import { CoreDialog, CoreFeedback } from "./schedule-editor";
 import type { Draft, Mutate } from "./use-core-feed";
+import { localMode } from "./local-data";
 
 export function useSeriesAction(item: ActivityView, enabled: boolean, disabled: boolean, mutate: Mutate, inline = false) {
   const [pending, setPending] = useState<{ command: Draft; success?: () => void; recurrence: NonNullable<ActivityView["recurrence"]> } | null>(null);
@@ -19,10 +20,12 @@ export function useSeriesAction(item: ActivityView, enabled: boolean, disabled: 
   const dialog = pending && <CoreDialog inline={inline} busy={feedback.busy} title={pending.command.action === "deleteTask" ? "Eliminar repetición" : "Aplicar cambio a repeticiones"} close={() => { if (!feedback.busy) setPending(null); }}>
     <p>El alcance usa la posición original dentro de la serie, aunque una instancia se haya movido o modificado.</p>
     <label className="form-field">Aplicar a<select disabled={disabled} value={scope} onChange={event => setScope(event.target.value as SeriesScope)}><option value="this">Solo esta</option><option value="following">Esta y las siguientes</option><option value="all">Toda la serie</option></select></label>
-    {pending.command.action === "setCompleted" && <p>Se {pending.command.completed ? "marcará" : "desmarcará"} {"la subtarea o tarea elegida"}. Los pasos eliminados se omiten y las otras marcas se conservan. Para una principal, también se aplica a todos sus hijos.</p>}
+    {pending.command.action === "setCompleted" && <p>Se {pending.command.completed ? "marcará" : "desmarcará"} {"la subtarea o tarea elegida"}. Los pasos eliminados se omiten y las otras marcas se conservan. Para una principal, también se aplica a todos sus hijos. {localMode()?"Se guarda aquí hasta pulsar Actualizar, incluso con internet.":""}</p>}
     {pending.command.action === "createTask" && scope !== "this" && <p>La nueva subtarea estará disponible en las repeticiones del alcance elegido, inicialmente pendiente.</p>}
-    {pending.command.action === "scheduleTask" && scope !== "this" && <p>Se aplican la nueva hora, duración y calendario. Cada instancia conserva su fecha actual. Los hijos mantienen sus horarios propios. Arrastrar cambia solo una instancia.</p>}
-    {pending.command.action === "deleteTask" && <p>Esta acción no se puede deshacer. Eliminar la principal retira también sus subtareas y horarios, incluidos los de otros calendarios.</p>}
+    {localMode()&&scope!=="this"&&["createTask","editTask"].includes(pending.command.action)&&<p>Se guardará aquí hasta pulsar Actualizar. Se incluyen las instancias modificadas; las subtareas eliminadas se omiten sin recrearlas. Los horarios y marcas existentes se conservan. Agregar una subtarea pendiente reabre las principales completadas.</p>}
+    {pending.command.action === "scheduleTask" && scope !== "this" && <p>{item.parentId?"Las subtareas pendientes reciben la hora y duración elegidas, respecto al día de su principal; las completadas conservan su horario y las eliminadas se omiten.":"Se aplican la nueva hora, duración y calendario. Cada instancia conserva su fecha actual. Los hijos mantienen sus horarios propios."} Arrastrar cambia solo una instancia. {localMode()?"Se guarda aquí hasta pulsar Actualizar.":""}</p>}
+    {pending.command.action === "unscheduleTask" && scope !== "this" && <p>Se mantienen las casillas y sus marcas. Las subtareas completadas conservan su horario; las pendientes del alcance pierden su programación, Conservar y Destacar. {localMode()?"Se guarda aquí hasta pulsar Actualizar.":""}</p>}
+    {pending.command.action === "deleteTask" && <p>{localMode()&&!item.parentId?"El borrado se guardará en este dispositivo. Puedes deshacerlo desde Borrados sin enviar antes de pulsar Actualizar. El alcance incluye instancias modificadas y se aplicará también fuera de las fechas descargadas.":"Esta acción no se puede deshacer."} Eliminar la principal retira también sus subtareas y horarios, incluidos los de otros calendarios.</p>}
     {feedback.error && <p className="pantry-error" role="alert">{feedback.error} {feedback.retry && <button type="button" className="core-text-button" disabled={feedback.busy} onClick={feedback.reattempt}>Reintentar cambio</button>}</p>}
     <button type="button" className="pantry-add-button" disabled={disabled} onClick={() => {
       const value = pending;

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     if (bucket.count > 20) return json({ message: "Espera un minuto antes de reintentar." }, 429);
     return json(await coreRuntime().service.executeLocalBatch(owner, await readJson(request)));
   } catch (cause) {
-    if (cause instanceof LocalTaskConflict) return json({ error: "LOCAL_CONFLICT", rootId: cause.rootId, item: cause.item, missingCalendarId: cause.missingCalendarId, message: cause.message }, 409);
+    if (cause instanceof LocalTaskConflict) return json({ error: "LOCAL_CONFLICT", rootId: cause.rootId, item: cause.item, missingCalendarId: cause.missingCalendarId, seriesDeletion: cause.seriesDeletion,seriesChange:cause.seriesChange, message: cause.message }, 409);
     if (cause instanceof CoreError) return json({ error: cause.code, message: cause.message }, cause.code === "UNAUTHENTICATED" ? 401 : cause.code === "INVALID_INPUT" ? 400 : 409);
     return json({ message: "No pudimos confirmar el envío. Reintenta Actualizar; no se duplicarán los cambios." }, 500);
   }

@@ -5,6 +5,8 @@ import { atTime, dateParts, monday, plusDays } from "@/app/core/dates";
 import type { LocalCopy } from "@/app/core/local-contract";
 import type { ActivityView } from "../../../../../reconstruction/core/src/views";
 import { kitchenLedger } from "../../../../../reconstruction/core/src/local-kitchen";
+import { seriesFingerprint } from "../../../../../reconstruction/core/src/series-fingerprint";
+import { uuid } from "../../../../../reconstruction/core/src/contracts";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -30,6 +32,20 @@ export async function GET(request: Request) {
     const dataRevision = owner.dataRevision.toString();
     // Entry check reads only identity and revision, not all the user's data.
     if (check) return Response.json({ ownerId, dataRevision }, { headers });
+    const fingerprintRequest = new URL(request.url).searchParams.get("fingerprints");
+    if(fingerprintRequest!==null){
+      const ids=[...new Set(fingerprintRequest.split(",").filter(Boolean))];
+      if(ids.length>1000)return Response.json({message:"Descarga menos series a la vez."},{status:400,headers});
+      const seriesFingerprints=await db.$transaction(async tx=>{
+        const values:Record<string,string>={};
+        for(const raw of ids){const id=uuid(raw,"Serie"),value=await seriesFingerprint(tx,ownerId,id);if(value)values[id]=value;}
+        const final=await tx.user.findUniqueOrThrow({where:{id:ownerId},select:{dataRevision:true}});
+        if(final.dataRevision.toString()!==dataRevision)throw new Error("CHANGED");
+        return values;
+      },{isolationLevel:"RepeatableRead",maxWait:10000,timeout:25000});
+      const active=await db.recurrenceSeries.findMany({where:{userId:ownerId,id:{in:ids},retiredAt:null},select:{id:true}});
+      return Response.json({ownerId,dataRevision,seriesFingerprints,activeSeries:active.map(item=>item.id)},{headers});
+    }
     const today = dateParts(new Date(), owner.timeZone).date;
     const start = plusDays(monday(today), -7), end = plusDays(start, 42);
     const calendars = await queries.calendars(ownerId);
@@ -99,10 +115,18 @@ export async function GET(request: Request) {
     // Reuse the global availability projection once for the whole local window.
     const planners = [await part("planner", planner.snapshot(ownerId, start, 42, true))];
     const ledger = await db.$transaction(tx => kitchenLedger(tx,ownerId), {maxWait:10000,timeout:25000});
+    const requestedSeries = new URL(request.url).searchParams.get("seriesId");
+    const seriesIds = [...new Set([...inbox.items, ...agenda.items, ...highlighted.items].flatMap(item => item.recurrence ? [item.recurrence.seriesId] : []))];
+    if(requestedSeries)seriesIds.push(uuid(requestedSeries,"Serie"));
+    const seriesFingerprints = await db.$transaction(async tx => {
+      const result: Record<string,string> = {};
+      for (const id of seriesIds) { const value = await seriesFingerprint(tx,ownerId,id); if (value) result[id] = value; }
+      return result;
+    }, {maxWait:10000,timeout:25000});
     const final = await db.user.findUniqueOrThrow({ where: { id: ownerId }, select: { dataRevision: true } });
     if (final.dataRevision.toString() !== dataRevision || [stock, definitions, purchases, calendars, ...planners].some(item => item.dataRevision !== dataRevision)) throw new Error("CHANGED");
     const copy: LocalCopy = { format: 1, ownerId, dataRevision, savedAt: new Date().toISOString(), today, start, end,
-      inbox, agenda, highlighted, calendars: calendars.items, pantry: stock, recipes: definitions, shopping: purchases, planners, kitchenLedger:ledger };
+      inbox, agenda, highlighted, calendars: calendars.items, pantry: stock, recipes: definitions, shopping: purchases, planners, kitchenLedger:ledger, seriesFingerprints };
     const encoded = JSON.stringify(copy);
     if (new TextEncoder().encode(encoded).byteLength > 15 * 1024 * 1024) throw new Error("TOO_LARGE");
     return new Response(encoded, { headers: { ...headers, "Content-Type": "application/json" } });

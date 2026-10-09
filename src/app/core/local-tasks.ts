@@ -3,6 +3,19 @@ import { parseSchedule, type CoreCommand, type ScheduleInput } from "../../../re
 import type { LocalGuard, LocalOperation } from "../../../reconstruction/core/src/local-task-contract";
 import type { LocalCopy } from "./local-contract";
 import { atTime } from "./dates";
+import { localInstant, localParts, shiftDate } from "../../../reconstruction/core/src/local-time";
+import { stepScheduleDefinition, stepOccurrenceSchedule } from "../../../reconstruction/core/src/series-step-schedule";
+
+function currentDate(row:ActivityView){
+  return row.schedule?.mode==="timed"?localParts(row.schedule.startsAt!,row.schedule.timeZone).date:row.schedule?.startDate??row.recurrence?.originalDate;
+}
+function scopedParentSchedule(schedule:ScheduleInput,date:string):ScheduleInput{
+  if(schedule.mode==="allDay")return {...schedule,startDate:date,endDate:shiftDate(date,(Date.parse(schedule.endDate)-Date.parse(schedule.startDate))/86400000)};
+  const time=localParts(schedule.startsAt,schedule.timeZone).time,duration=Date.parse(schedule.endsAt)-Date.parse(schedule.startsAt);
+  if(duration%900000||Number(time.slice(3))%15||new Date(schedule.startsAt).getUTCSeconds()||new Date(schedule.startsAt).getUTCMilliseconds())throw new Error("Usa intervalos de 15 minutos.");
+  const startsAt=localInstant(date,time,schedule.timeZone);
+  return {...schedule,startsAt,endsAt:new Date(Date.parse(startsAt)+duration).toISOString()};
+}
 
 export function taskRows(copy: LocalCopy) {
   const rows = new Map<string, ActivityView>();
@@ -52,9 +65,87 @@ function setTaskSchedule(copy: LocalCopy, root: ActivityView, selected: Activity
   }
 }
 
-/** Local task projections share schedule inheritance; inventory and series rules stay server-only. */
+/** Project downloaded instances; the server applies the same scopes to future definitions. */
 export function projectTask(copy: LocalCopy, op: LocalOperation): { copy: LocalCopy; result: CommandResult } {
   const c = op.command, rows = taskRows(copy);
+  if(c.action==="stopRecurrence"&&op.seriesChange){
+    const updates:ActivityView[]=[],removedIds:string[]=[];
+    const orphan=[...rows.values()].find(row=>row.parentId&&!rows.has(row.parentId)&&row.recurrence?.seriesId===c.seriesId&&row.recurrence.originalDate&&row.recurrence.originalDate>=c.effectiveDate);
+    if(orphan)throw new Error(`Descarga primero la fecha ${orphan.recurrence!.originalDate} de la principal de «${orphan.title}» para separar la serie sin dejar subtareas incompletas en la copia.`);
+    for(const source of rows.values()){
+      if(source.parentId||source.recurrence?.seriesId!==c.seriesId)continue;
+      const chosen=source.id===c.id;
+      if(!chosen&&(source.completedAt||!source.recurrence.originalDate||source.recurrence.originalDate<c.effectiveDate))continue;
+      // Virtual progress is preserved as history, not expanded into independent copies.
+      if(!chosen&&source.recurrence.virtual&&source.children.some(child=>child.completedAt))continue;
+      if(!chosen&&(source.recurrence.virtual||!c.preserveModified)){
+        removedIds.push(source.id,...source.children.map(child=>child.id));continue;
+      }
+      const root=structuredClone(source);root.recurrence=null;root.updatedAt=op.at;
+      root.children=root.children.map(child=>({...child,stepKeyId:null,recurrence:null,parentCalendarId:chosen?undefined:root.schedule?.calendarId}));
+      if(chosen){root.schedule=null;root.keep=false;root.highlighted=false;}
+      updates.push(root);
+    }
+    return {copy:mergeTaskRows(copy,updates,removedIds),result:{activities:updates.flatMap(root=>[root,...root.children.map(child=>({...child,children:[]}))]),removedIds,calendars:[],dataRevision:copy.dataRevision}};
+  }
+  if(op.seriesChange){
+    const ref=op.seriesChange,removedIds:string[]=[],updates:ActivityView[]=[];
+    const belongs=(row:ActivityView)=>row.recurrence?.seriesId===ref.seriesId&&(ref.fromDate===null||!!row.recurrence.originalDate&&row.recurrence.originalDate>=ref.fromDate);
+    const roots=[...rows.values()].filter(row=>!row.parentId&&row.kind==="task"&&!row.mealRole&&belongs(row));
+    const additions=c.action==="addSubtasks"?c.children:c.action==="createTask"?[c]:[];
+    const changesSchedule=c.action==="scheduleTask"||c.action==="unscheduleTask"||c.action==="saveTask"&&c.schedule!==undefined;
+    const schedule=c.action==="scheduleTask"?c.schedule:c.action==="saveTask"?c.schedule:null;
+    const definition=changesSchedule&&schedule&&ref.stepKeyId?stepScheduleDefinition(schedule,ref.anchorDate!):null;
+    if(changesSchedule&&ref.stepKeyId&&[...rows.values()].some(row=>row.parentId&&belongs(row)&&(row.stepKeyId??row.id)===ref.stepKeyId&&!rows.has(row.parentId)&&!row.completedAt))throw new Error("Descarga primero las fechas de las principales de estas subtareas para calcular sus horarios sin conexión.");
+    const position=Math.max(-1,...roots.flatMap(root=>root.children.map(child=>child.position)))+1;
+    for(const source of roots){
+      const root=structuredClone(source);
+      if(additions.length){
+        if(root.children.length+additions.length>500)throw new Error("Una instancia superaría las 500 subtareas. Reduce el cambio.");
+        for(const [index,child] of additions.entries()){
+          const id=ref.childIds?.[root.id]?.[child.id];if(!id)throw new Error("Falta preparar la identidad de una subtarea.");
+          root.children.push({...newTask(id,child.title,root.id,op.at,position+index),stepKeyId:child.id,recurrence:root.recurrence,parentCalendarId:root.schedule?.calendarId});
+        }
+        root.completedAt=null;
+      }else if(c.action==="editTask"||c.action==="saveTask"||c.action==="scheduleTask"||c.action==="unscheduleTask"){
+        const selected=ref.stepKeyId===null?root:root.children.find(item=>(item.stepKeyId??item.id)===ref.stepKeyId);
+        if(selected){
+          if((c.action==="editTask"||c.action==="saveTask")&&c.title!==undefined)selected.title=c.title;
+          if(changesSchedule&&(!selected.parentId||!selected.completedAt)){
+            if(!selected.parentId&&!schedule)throw new Error("Quita el horario solo de esta instancia; la serie principal necesita fechas para repetirse.");
+            const date=currentDate(root);if(!date)throw new Error("Falta la fecha original de la principal.");
+            const next=selected.parentId?(definition?stepOccurrenceSchedule(definition,date,undefined,root.schedule?.calendarId):null):scopedParentSchedule(schedule!,date);
+            setTaskSchedule(copy,root,selected,next);
+          }
+          selected.updatedAt=op.at;
+        }
+      }else if(c.action==="setCompleted"){
+        const selected=ref.stepKeyId===null?[root,...root.children]:root.children.filter(child=>(child.stepKeyId??child.id)===ref.stepKeyId);
+        for(const item of selected)if(!!item.completedAt!==c.completed)item.completedAt=c.completed?op.at:null;
+        if(ref.stepKeyId&&selected.length&&root.children.length){
+          if(root.children.some(child=>!child.completedAt))root.completedAt=null;
+          else root.completedAt??=op.at;
+        }
+      }else if(c.action==="deleteTask"&&ref.stepKeyId){
+        const matches=root.children.filter(child=>(child.stepKeyId??child.id)===ref.stepKeyId);
+        removedIds.push(...matches.map(child=>child.id));root.children=root.children.filter(child=>!matches.includes(child));
+        if(matches.length&&root.children.length){if(root.children.some(child=>!child.completedAt))root.completedAt=null;else root.completedAt??=op.at;}
+      }else throw new Error("Esta acción de serie necesita conexión directa.");
+      root.updatedAt=op.at;updates.push(root);
+    }
+    // Scheduled children can be downloaded even when their parent's date is outside the window.
+    for(const row of rows.values())if(row.parentId&&!roots.some(root=>root.id===row.parentId)&&belongs(row)&&(row.stepKeyId??row.id)===ref.stepKeyId){
+      if(c.action==="deleteTask")removedIds.push(row.id);
+      else if(c.action==="setCompleted")updates.push({...row,completedAt:c.completed?(row.completedAt??op.at):null,updatedAt:op.at});
+      else if((c.action==="editTask"||c.action==="saveTask")&&c.title!==undefined)updates.push({...row,title:c.title,updatedAt:op.at});
+    }
+    return {copy:mergeTaskRows(copy,updates,removedIds),result:{activities:updates.flatMap(root=>[root,...root.children.map(child=>({...child,children:[]}))]),removedIds,calendars:[],dataRevision:copy.dataRevision}};
+  }
+  if (op.seriesDeletion && c.action === "deleteTask") {
+    const ref = op.seriesDeletion;
+    const removedIds = [...new Set([...rows.values()].filter(row=>row.recurrence?.seriesId===ref.seriesId && (ref.fromDate===null || !!row.recurrence.originalDate && row.recurrence.originalDate>=ref.fromDate)).flatMap(row=>[row.id,...row.children.map(child=>child.id)]))];
+    return {copy:mergeTaskRows(copy,[],removedIds),result:{activities:[],removedIds,calendars:[],dataRevision:copy.dataRevision}};
+  }
   let root = rows.get(op.rootId);
   const target = "id" in c ? rows.get(c.id) : undefined;
   if (c.action === "createTask" && !c.parentId) {
@@ -69,13 +160,13 @@ export function projectTask(copy: LocalCopy, op: LocalOperation): { copy: LocalC
     if (!selected) throw new Error("La subtarea ya no está disponible.");
     if (c.action === "createTask") {
       if (c.parentId !== root.id) throw new Error("Solo se admite un nivel de subtareas.");
-      const child = { ...newTask(c.id, c.title, root.id, op.at, c.position), description: c.description, parentCalendarId: root.schedule?.calendarId };
+      const child = { ...newTask(c.id, c.title, root.id, op.at, c.position), description: c.description, parentCalendarId: root.schedule?.calendarId, ...(root.recurrence?{stepKeyId:c.id,recurrence:root.recurrence}:{}) };
       root.children.push(child);
       if (c.schedule) setTaskSchedule(copy, root, child, c.schedule);
     } else if (c.action === "addSubtasks") {
       if (selected.parentId) throw new Error("Solo se admite un nivel de subtareas.");
       const position = Math.max(-1, ...root.children.map(child => child.position)) + 1;
-      root.children.push(...c.children.map((child, index) => ({...newTask(child.id, child.title, root!.id, op.at, position + index), parentCalendarId: root!.schedule?.calendarId})));
+      root.children.push(...c.children.map((child, index) => ({...newTask(child.id, child.title, root!.id, op.at, position + index), parentCalendarId: root!.schedule?.calendarId,...(root!.recurrence?{stepKeyId:child.id,recurrence:root!.recurrence}:{})})));
     } else if (c.action === "editTask" || c.action === "saveTask") {
       if (c.title !== undefined) selected.title = c.title;
       if (c.action === "editTask") { if (c.description !== undefined) selected.description = c.description; if (c.position !== undefined) selected.position = c.position; }

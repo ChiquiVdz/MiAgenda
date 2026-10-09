@@ -1,6 +1,6 @@
 {
-  "at": "2026-10-08T19:00:47.719Z",
-  "schema": "miagenda_integral_test_0d71813c22994712914aae710d3199a9",
+  "at": "2026-10-09T16:27:04.890Z",
+  "schema": "miagenda_integral_test_e025116bfa724b08b835b5fcf1c726cb",
   "passed": [
     "Esquema temporal creado con migraciones reales",
     "SQL sin calificar y Prisma comparten solo los usuarios de prueba",

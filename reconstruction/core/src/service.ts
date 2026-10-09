@@ -7,15 +7,17 @@ import { readActivities } from "./activity-reads.ts";
 import { moveStepCalendar } from "./series-step-schedule.ts";
 import { calendarImpact } from "./calendar-impact.ts";
 import { createSeries, materialize, virtualAgenda } from "./series-runtime.ts";
-import { applySeriesScope } from "./series-scopes.ts";
+import { applySeriesScope, deleteSeriesLocally } from "./series-scopes.ts";
+import { seriesFingerprint } from "./series-fingerprint.ts";
 import { changeFrequency, previewFrequency } from "./series-frequency.ts";
+import { stopRecurrence } from "./series-stop.ts";
 import { moveMeal, retireMeal } from "./planner.ts";
 import { completeMeal, undoMeal, setMealStep } from "./meal-consumption.ts";
 import { parseLocalBatch } from "./local-task-contract.ts";
 import type { ActivityView } from "./views.ts";
 
 export class LocalTaskConflict extends CoreError {
-  constructor(readonly rootId: string, readonly item: ActivityView | null, readonly missingCalendarId?: string) { super("CONFLICT", missingCalendarId ? "El calendario elegido ya no existe. Elige otro calendario o usa la versión del servidor." : "Esta tarea cambió en otro dispositivo. Elige qué versión conservar."); }
+  constructor(readonly rootId: string, readonly item: ActivityView | null, readonly missingCalendarId?: string, readonly seriesDeletion = false, readonly seriesChange = false) { super("CONFLICT", seriesDeletion ? "La serie cambió en otro dispositivo. Confirma si quieres borrar también su versión actual." : seriesChange ? "La serie cambió en otro dispositivo. Elige aplicar este cambio a la versión actual o cancelarlo." : missingCalendarId ? "El calendario elegido ya no existe. Elige otro calendario o usa la versión del servidor." : "Esta tarea cambió en otro dispositivo. Elige qué versión conservar."); }
 }
 
 type Tx = Prisma.TransactionClient;
@@ -55,7 +57,7 @@ export class ActivityService {
           const end = new Date(Date.parse(guard.date)+86400000).toISOString().slice(0,10);
           current = (await virtualAgenda(tx,userId,ids.map(c=>c.id),guard.date,end)).find(item=>item.id===id) ?? null;
         }
-        throw new LocalTaskConflict(id, current, missingCalendarId);
+        throw new LocalTaskConflict(id, current, missingCalendarId, batch.operations.some(op=>op.rootId===id&&op.seriesDeletion),batch.operations.some(op=>op.rootId===id&&op.seriesChange));
       };
       const requested = batch.operations.flatMap(op => "schedule" in op.command && op.command.schedule ? [{rootId:op.rootId,id:op.command.schedule.calendarId}] : []);
       if (requested.length) {
@@ -64,7 +66,24 @@ export class ActivityService {
         if (missing) await conflict(missing.rootId,missing.id);
       }
       // Validate every aggregate before materializing or changing anything.
+      const seriesIds = new Set<string>();
       for (const guard of batch.guards) {
+        if (guard.occurrence) seriesIds.add(guard.occurrence.seriesId);
+        else { const root = await tx.activity.findFirst({where:{userId,id:guard.id},select:{occurrence:{select:{seriesId:true}}}}); if(root?.occurrence)seriesIds.add(root.occurrence.seriesId); }
+      }
+      batch.operations.forEach(op=>{const ref=op.seriesDeletion??op.seriesChange;if(ref)seriesIds.add(ref.seriesId);});
+      const baseSeriesFingerprints: Record<string,string> = {};
+      for(const id of seriesIds){const value=await seriesFingerprint(tx,userId,id);if(value)baseSeriesFingerprints[id]=value;}
+      for (const guard of batch.guards) {
+        const scoped = batch.operations.find(op=>op.rootId===guard.id&&(op.seriesDeletion||op.seriesChange));
+        const fence=scoped?.seriesDeletion??scoped?.seriesChange;
+        if (fence) {
+          if (baseSeriesFingerprints[fence.seriesId] !== fence.fingerprint) await conflict(guard.id);
+          if(scoped?.seriesChange&&guard.occurrence){
+            try{await materialize(tx,userId,guard.occurrence,guard.id);}catch(cause){if(cause instanceof CoreError&&["CONFLICT","NOT_FOUND"].includes(cause.code))await conflict(guard.id);throw cause;}
+          }
+          continue;
+        }
         const row = await tx.activity.findFirst({ where: { userId, id: guard.id, lifecycle: "active" }, include: { children: { where: { lifecycle: "active" }, select: { id: true, revision: true } }, mealStep: true } });
         if (guard.revision === null) {
           if (row || !batch.operations.some(op => op.rootId === guard.id && op.command.action === "createTask" && !op.command.parentId && op.command.id === guard.id)) await conflict(guard.id);
@@ -88,7 +107,30 @@ export class ActivityService {
         }
       }
       const removedIds = new Set<string>();
+      const affectedIds = new Set(batch.guards.map(guard=>guard.id));
       for (const op of batch.operations) {
+        if(op.seriesChange){
+          if(op.command.action==="stopRecurrence"){
+            const result=await stopRecurrence(tx,userId,op.command,true);
+            result.affectedIds.forEach(id=>affectedIds.add(id));result.removedIds.forEach(id=>removedIds.add(id));continue;
+          }
+          const applyPart=async(command:CoreCommand)=>{
+            const appliedAt=new Date(Math.min(Date.parse(op.at),Date.now()));
+            const scoped=await applySeriesScope(tx,userId,command,parentId=>this.reconcileParent(tx,userId,parentId,appliedAt),{...op.seriesChange!,rootId:op.rootId,appliedAt});
+            scoped.removedIds.forEach(id=>removedIds.add(id));scoped.affectedIds.forEach(id=>affectedIds.add(id));
+          };
+          if(op.command.action==="saveTask"){
+            const {id,expectedRevision,commandId,scope,title,schedule}=op.command;
+            if(title!==undefined)await applyPart({action:"editTask",id,expectedRevision,commandId,scope,title});
+            if(schedule!==undefined)await applyPart(schedule===null?{action:"unscheduleTask",id,expectedRevision,commandId,scope}:{action:"scheduleTask",id,expectedRevision,commandId,scope,schedule});
+          }else await applyPart(op.command);
+          continue;
+        }
+        if (op.seriesDeletion) {
+          seriesIds.add(op.seriesDeletion.seriesId);
+          (await deleteSeriesLocally(tx,userId,op.seriesDeletion.seriesId,op.seriesDeletion.fromDate)).forEach(id=>removedIds.add(id));
+          continue;
+        }
         let command = op.command;
         const id = command.action === "createTask" ? command.parentId : command.id;
         if (id) {
@@ -103,9 +145,12 @@ export class ActivityService {
         const result = await this.apply(tx, userId, applied as CoreCommand, at);
         result.removedIds.forEach(id => removedIds.add(id));
       }
-      const activities = await readActivities(tx, userId, { where: { id: { in: batch.guards.map(g => g.id) }, lifecycle: "active" } });
+      const activities = await readActivities(tx, userId, { where: { id: { in: [...affectedIds] }, lifecycle: "active" } });
       const owner = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { dataRevision: true } });
-      const result: CommandResult = { activities, removedIds: [...removedIds], calendars: [], baseDataRevision: owners[0].dataRevision.toString(), dataRevision: owner.dataRevision.toString() };
+      const seriesFingerprints: Record<string,string> = {};
+      const seriesRevisions:Record<string,number>={};
+      for(const id of seriesIds){const value=await seriesFingerprint(tx,userId,id);if(value)seriesFingerprints[id]=value;const family=await tx.recurrenceSeries.findFirst({where:{userId,id},select:{revision:true}});if(family)seriesRevisions[id]=family.revision;}
+      const result: CommandResult = { activities, removedIds: [...removedIds], calendars: [], baseDataRevision: owners[0].dataRevision.toString(), dataRevision: owner.dataRevision.toString(), seriesFingerprints, baseSeriesFingerprints,seriesRevisions };
       await tx.commandReceipt.create({ data: { userId, commandId: batch.commandId, action: "syncLocalTasks", payloadHash: hash, result: result as unknown as Prisma.InputJsonValue } });
       return { ...result, replayed: false };
     }, { maxWait: 10000, timeout: 25000 });
@@ -134,7 +179,7 @@ export class ActivityService {
             // Validate the exact preview BEFORE our own writes bump revisions.
             await previewFrequency(tx, userId, { ...command, ...command.frequency, action: "changeRecurrence" });
           }
-          if (command.occurrence && command.action !== "changeRecurrence" && !(command.action === "saveTask" && command.frequency && command.title === undefined && command.schedule === undefined)) {
+          if (command.occurrence && command.action !== "changeRecurrence" && command.action !== "stopRecurrence" && !(command.action === "saveTask" && command.frequency && command.title === undefined && command.schedule === undefined)) {
             const targetId = command.action === "createTask" ? command.parentId : command.id;
             if (!targetId || (command.action === "createTask" ? command.expectedParentRevision : "expectedRevision" in command ? command.expectedRevision : -1) !== 0) {
               throw new CoreError("INVALID_INPUT", "Referencia virtual inválida.");
@@ -189,7 +234,10 @@ export class ActivityService {
     const removedIds: string[] = [];
     const calendars: CommandResult["calendars"] = [];
     const now = actionTime ?? new Date();
-    if (command.action === "addSubtasks") {
+    if (command.action === "stopRecurrence") {
+      const result=await stopRecurrence(tx,userId,command);
+      result.affectedIds.forEach(id=>affected.add(id));removedIds.push(...result.removedIds);
+    } else if (command.action === "addSubtasks") {
       const parent = await this.target(tx, userId, command.id, command.expectedRevision);
       if (parent.kind !== "task" || parent.parentId) throw new CoreError("DEPENDENCY", "Solo una tarea principal admite nuevas subtareas; los pasos de cocina se editan desde sus recetas.");
       const root = await tx.activity.findFirstOrThrow({ where: { id: parent.id, userId }, include: { occurrence: true } });

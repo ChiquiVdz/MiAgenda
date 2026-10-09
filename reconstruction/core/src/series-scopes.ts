@@ -5,6 +5,7 @@ import { localInstant, localParts, shiftDate } from "./local-time.ts";
 import { stepActivityId } from "./series-runtime.ts";
 import { projectedProgress } from "./series-progress.ts";
 import { scopeSegments, segmentEnd } from "./series-generation.ts";
+import type { SeriesChange } from "./local-task-contract.ts";
 
 import { emptyStepSchedule, parentLocalDate, stepOccurrenceSchedule, stepScheduleData, stepScheduleDefinition } from "./series-step-schedule.ts";
 
@@ -24,31 +25,52 @@ function scheduleData(schedule: ScheduleInput) {
     endDate: schedule.mode === "allDay" ? new Date(`${schedule.endDate}T00:00:00Z`) : null };
 }
 
+/** A confirmed local deletion retains its original boundary even if its anchor was removed elsewhere. */
+export async function deleteSeriesLocally(tx: Tx, userId: string, seriesId: string, fromDate: string | null) {
+  const family = await tx.recurrenceSeries.findFirst({ where: { id: seriesId, userId } });
+  if (!family) throw new CoreError("NOT_FOUND", "La serie ya no está disponible.");
+  if (family.retiredAt) return [];
+  const roots = await tx.activity.findMany({ where: { userId, lifecycle: "active", occurrence: { is: { userId, seriesId, ...(fromDate ? { originalLocal: { gte: fromDate } } : {}) } } }, include: { children: { where: { lifecycle: "active" } } } });
+  if (fromDate === null) await tx.recurrenceSeries.update({ where: { id: seriesId }, data: { retiredAt: new Date() } });
+  else {
+    const segments = await scopeSegments(tx,userId,seriesId,fromDate);
+    for (const segment of segments) await tx.occurrenceRetirementRange.upsert({ where: { seriesId_fromOrdinal: { seriesId, fromOrdinal: segment.fromOrdinal } }, create: { userId, seriesId, fromOrdinal: segment.fromOrdinal, toOrdinal: segmentEnd(segment), reason: "deleted" }, update: { toOrdinal: segmentEnd(segment) } });
+    await tx.recurrenceSeries.update({ where: { id: seriesId }, data: { revision: { increment: 1 } } });
+  }
+  const removedIds = roots.flatMap(root=>[root.id,...root.children.map(child=>child.id)]);
+  await retire(tx,userId,removedIds);
+  return removedIds;
+}
+
 /** Scope commands include every active exception by ORIGINAL ordinal, even
  * moved instances, different calendars, or instances whose schedule was removed.
  * The owner lock is acquired by ActivityService before entering this function.
  */
 export async function applySeriesScope(tx: Tx, userId: string, command: CoreCommand,
-  reconcile: (parentId: string) => Promise<void>): Promise<{ affectedIds: string[]; removedIds: string[] }> {
+  reconcile: (parentId: string) => Promise<void>, localContext?: SeriesChange & {rootId:string; appliedAt?:Date}): Promise<{ affectedIds: string[]; removedIds: string[] }> {
   const targetId = command.action === "createTask" ? command.parentId : command.id;
   if (!targetId) invalid("El alcance de serie requiere una actividad existente.");
-  const target = await tx.activity.findFirst({ where: { id: targetId, userId, lifecycle: "active", kind: "task" }, include: { occurrence: true } });
+  const target = localContext ? {id:targetId,parentId:localContext.stepKeyId?localContext.rootId:null,stepKeyId:localContext.stepKeyId,revision:0,occurrence:null} : await tx.activity.findFirst({ where: { id: targetId, userId, lifecycle: "active", kind: "task" }, include: { occurrence: true } });
   if (!target) throw new CoreError("NOT_FOUND", "La actividad ya no está disponible.");
   const expected = command.action === "createTask" ? command.expectedParentRevision : "expectedRevision" in command ? command.expectedRevision : -1;
-  if (target.revision !== expected) throw new CoreError("CONFLICT", "La actividad cambió. Actualiza antes de aplicar a la serie.");
-  const root = target.parentId ? await tx.activity.findFirst({ where: { id: target.parentId, userId, lifecycle: "active" }, include: { occurrence: true } }) : target;
+  if (!localContext && target.revision !== expected) throw new CoreError("CONFLICT", "La actividad cambió. Actualiza antes de aplicar a la serie.");
+  const root = localContext ? {id:localContext.rootId,occurrence:{seriesId:localContext.seriesId,originalLocal:localContext.fromDate??"0001-01-01"}} : target.parentId ? await tx.activity.findFirst({ where: { id: target.parentId, userId, lifecycle: "active" }, include: { occurrence: true } }) : target;
   if (!root?.occurrence) invalid("Esta actividad no pertenece a una serie recurrente.");
   const seriesId = root.occurrence.seriesId;
   const family = await tx.recurrenceSeries.findFirst({ where: { id: seriesId, userId, retiredAt: null } });
   if (!family) throw new CoreError("NOT_FOUND", "La serie ya no está disponible.");
-  if (family.revision !== command.expectedSeriesRevision) throw new CoreError("CONFLICT", "La serie cambió. Actualiza antes de aplicar este alcance.");
-  const fromDate = command.scope === "all" ? null : root.occurrence.originalLocal.slice(0, 10);
+  if (!localContext && family.revision !== command.expectedSeriesRevision) throw new CoreError("CONFLICT", "La serie cambió. Actualiza antes de aplicar este alcance.");
+  const fromDate = localContext ? localContext.fromDate : command.scope === "all" ? null : root.occurrence.originalLocal.slice(0, 10);
   const segments = await scopeSegments(tx, userId, seriesId, fromDate);
   const roots = await tx.activity.findMany({ where: { userId, lifecycle: "active", occurrence: { is: { userId, seriesId, ...(fromDate ? { originalLocal: { gte: fromDate } } : {}) } } }, include: { children: { where: { lifecycle: "active" } }, schedule: true, occurrence: true } });
   const rootIds = roots.map(item => item.id), affected = new Set(rootIds), removedIds: string[] = [];
-  const now = new Date();
+  const now = localContext?.appliedAt ?? new Date();
   // A legacy instance-only child gets a private stable key. Never match by name.
   let stepKeyId = target.stepKeyId;
+  if(localContext?.stepKeyId){
+    const legacy=roots.flatMap(parent=>parent.children).find(child=>child.id===localContext.stepKeyId&&!child.stepKeyId);
+    if(legacy){await tx.seriesStepKey.create({data:{id:legacy.id,userId,seriesId}});await tx.activity.update({where:{id:legacy.id},data:{stepKeyId:legacy.id}});legacy.stepKeyId=legacy.id;}
+  }
   if (target.parentId && !stepKeyId) {
     stepKeyId = target.id;
     await tx.seriesStepKey.create({ data: { id: stepKeyId, userId, seriesId } });
@@ -79,7 +101,7 @@ export async function applySeriesScope(tx: Tx, userId: string, command: CoreComm
     await retire(tx, userId, removedIds);
   } else {
     if ((command.action === "scheduleTask" || command.action === "unscheduleTask") && target.parentId) {
-      const rootDate=parentLocalDate(roots.find(item=>item.id===root.id)?.schedule??null,root.occurrence.originalLocal);
+      const rootDate=localContext?.anchorDate??parentLocalDate(roots.find(item=>item.id===root.id)?.schedule??null,root.occurrence.originalLocal);
       if(command.action==="scheduleTask" && !await tx.calendar.findFirst({where:{id:command.schedule.calendarId,userId}})) throw new CoreError("NOT_FOUND","El calendario no está disponible.");
       const definition=command.action==="scheduleTask"?stepScheduleDefinition(command.schedule,rootDate):emptyStepSchedule;
       const definitions=await tx.seriesStepDefinition.findMany({where:{userId,segmentId:{in:segments.map(segment=>segment.id)},stepKeyId:stepKeyId!}});
@@ -87,7 +109,7 @@ export async function applySeriesScope(tx: Tx, userId: string, command: CoreComm
       for(const previous of definitions){
         const old=Object.fromEntries(Object.keys(emptyStepSchedule).map(key=>[key,previous[key as keyof typeof emptyStepSchedule]]));
         const history=[...(Array.isArray(previous.scheduleHistory)?previous.scheduleHistory:[]),{...old,sequence:sequence[0].sequence.toString()}] as Prisma.InputJsonValue;
-        await tx.seriesStepDefinition.update({where:{id:previous.id},data:{...definition,...(definition.scheduleMode ? {scheduleCalendarId:segments.find(segment=>segment.id===previous.segmentId)!.calendarId}:{}),scheduleHistory:history}});
+        await tx.seriesStepDefinition.update({where:{id:previous.id},data:{...definition,scheduleHistory:history}});
       }
       for(const parent of roots) for(const child of parent.children){
         if(child.stepKeyId!==stepKeyId || child.completedAt)continue;

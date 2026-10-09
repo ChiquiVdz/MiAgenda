@@ -1,62 +1,63 @@
-# Prueba real en iPhone
+# Revisar MiAgenda en iPhone y PC
 
-Estado: preparación local realizada; publicación y comprobación en el dispositivo pendientes. No existe todavía un enlace de esta versión en internet.
+Actualizado: 9 de octubre de 2026. La aplicación ya tiene publicación HTTPS en https://mi-agenda-fawn.vercel.app. Google sirve solo para entrar. No necesitas App Store ni mantener encendida la PC para usar esa publicación.
 
-## Qué está preparado
+## Preparar el iPhone
 
-- Manifiesto instalable, nombre MiAgenda, iconos 192/512 y Apple 180, apertura independiente desde Inicio.
-- Copia de consulta y pantallas descargadas, sin guardar autenticación ni HTML privado en el service worker.
-- Vercel genera el cliente Prisma antes de compilar. No ejecuta migraciones ni borra datos al publicar.
-- Prueba personal con correos autorizados mediante `MIAGENDA_ALLOWED_EMAILS`. En Vercel la configuración es obligatoria; Google debe proporcionar un correo verificado incluido en la lista. Esto restringe los nuevos accesos, no revoca sesiones emitidas antes de cambiar la lista.
-- URL estable HTTPS; Google sigue siendo solo inicio de sesión.
+1. Abrir el enlace en Safari, fuera de navegación privada, con la cuenta autorizada.
+2. Si no está instalada: Compartir → Agregar a Inicio. Abrir desde ese icono; puede pedir acceso y descargar su propia copia.
+3. Para recibir código nuevo, cerrar y volver a abrir MiAgenda con internet. Cerrar también pestañas antiguas de la app. Si todavía aparece la versión anterior, volver a abrirla después de que termine la descarga de sus pantallas. No borrar los datos del sitio ni cerrar sesión si hay cambios sin enviar.
+4. Pulsar **Actualizar**. Esperar contador cero y, en **Info**, «Pantallas listas para abrir sin conexión».
 
-## Publicar la prueba en Vercel
+Actualizar envía tus cambios pendientes y después descarga los del servidor. Reconectar no envía automáticamente. Al entrar con internet puede comprobarse si hay novedades; navegar entre apartados reutiliza la copia descargada.
 
-1. Iniciar sesión en Vercel y crear/importar MiAgenda desde GitHub, o publicar el directorio actual con la CLI autorizada. Si se importa GitHub, comprobar que la rama contiene la reconstrucción actual: importar una versión antigua no publica estos cambios locales.
-2. Framework Next.js, raíz del repositorio, instalación `npm ci`, compilación definida por `vercel.json`: `npm run db:generate && npm run build`. Elegir una versión de Node mantenida compatible con `package.json` (22 o 24), sin versiones experimentales.
-3. Elegir el dominio estable asignado al proyecto, por ejemplo `https://NOMBRE.vercel.app`. El nombre real lo proporciona Vercel; no usar una URL temporal diferente en cada publicación.
-4. Configurar las siguientes variables **en el servidor**, sin prefijo `NEXT_PUBLIC_`, para el entorno Production de esta prueba:
+## Recorrido 1: tareas y horarios
 
-| Variable | Valor / procedencia |
-|---|---|
-| `NEXTAUTH_URL` | URL HTTPS estable del proyecto, sin `/inbox` ni `/login` |
-| `NEXTAUTH_SECRET` | Secreto aleatorio propio del despliegue; no pegar en chat/Git |
-| `AUTH_GOOGLE_ID` | ID del cliente web de Google actual, o uno exclusivo para la prueba |
-| `AUTH_GOOGLE_SECRET` | Secreto del mismo cliente web |
-| `MIAGENDA_CORE_DATABASE_URL` | Conexión Neon a **miagenda_core**; copiar de `reconstruction/core/.env.local` al campo privado de Vercel |
-| `MIAGENDA_ALLOWED_EMAILS` | Tu correo de Google; varios separados por coma si se autorizan más usuarios |
-| `CRON_SECRET` | Secreto aleatorio propio para autorizar limpieza automática |
+Usar tareas nuevas con el prefijo PRUEBA IPHONE. No modificar rutinas habituales.
 
-5. En Google Cloud → Google Auth Platform → Clients (o APIs y servicios → Credenciales), editar el cliente OAuth web que corresponde al ID configurado. **Añadir**, conservando localhost:
-   - Origen JavaScript autorizado: `https://NOMBRE.vercel.app`.
-   - URI de redirección autorizada: `https://NOMBRE.vercel.app/api/auth/callback/google`.
-   - Si la audiencia está en Testing, incluir la cuenta entre los usuarios de prueba cuando corresponda. No añadir permisos de Calendar.
-6. Publicar/republicar después de configurar las variables. No habilitar publicaciones Preview contra la base diaria sin una separación acordada. Este primer ensayo usa deliberadamente la misma cuenta y base actual: guardar o borrar desde el iPhone afecta a los datos visibles en PC después de actualizar su copia.
-7. Comprobar el acceso autorizado, rechazo de una cuenta no incluida y que las API sin sesión no devuelven datos. La URL de la pantalla de acceso es visible en internet; los datos requieren sesión. El cron existente está programado una vez al día a las 09:00 UTC y usa `CRON_SECRET`.
+1. Con internet, crear una tarea en Inbox y agregar dos subtareas seguidas. Listo → Guardar las guarda juntas.
+2. Usar el reloj junto al lápiz de la principal para agendarla hoy. En Agenda abrir su detalle, programar un hijo y comprobar que hereda el calendario. Su casilla sigue existiendo y se indica que está agendado.
+3. Pulsar Actualizar. En PC abrir la misma cuenta y Actualizar: deben verse la tarea, sus hijos y horarios.
+4. En iPhone activar modo avión y apagar también Wi-Fi. Crear otra tarea, editar su nombre, agregar hijos, completar uno, agendar la principal y cambiar su horario desde Editar.
+5. Cerrar/reabrir desde el icono sin conexión. Deben conservarse nombres, horarios, marcas y contador pendiente.
+6. Reconectar: el contador debe seguir pendiente. Pulsar Actualizar; debe llegar a cero. Actualizar en PC para comprobar lo mismo.
 
-No se requiere App Store ni descargar un archivo de instalación. Tampoco mantener encendida la PC. La primera descarga y las operaciones conectadas sí requieren que el alojamiento y Neon respondan.
+## Recorrido 2: series
 
-## En tu iPhone, cuando tengas el enlace
+Preparar conectada una serie nueva de prueba con tres subtareas y varias fechas. Actualizar antes de desconectarse.
 
-1. Abrir el enlace HTTPS **en Safari**, fuera de navegación privada.
-2. Iniciar sesión con la misma cuenta Google que usas en PC. Esperar a que la copia termine de descargarse.
-3. Compartir → **Agregar a Inicio**. Si aparece **Abrir como app web**, dejarlo activado. Nombre MiAgenda → Agregar. Si la acción no aparece, buscarla en Editar acciones.
-4. Abrir MiAgenda desde su icono. Puede necesitar iniciar sesión y descargar la copia de nuevo: no asumir que la instalación comparte la sesión/almacenamiento de la pestaña Safari.
-5. En Info, esperar **Pantallas listas para abrir sin conexión**. Entrar a Inbox, Agenda y Cocina; comprobar que se ven tus datos y que los controles caben sin desplazamiento horizontal inesperado.
-6. Con conexión, crear un pendiente de prueba; en PC pulsar Actualizar copia y comprobar que aparece. Eliminar solo el pendiente creado para este ensayo.
-7. Cerrar la app, activar modo avión y apagar también Wi-Fi. Abrir desde el icono: debe mostrar la última copia. Recorrer Inbox, Agenda, Alacena, Recetas, Planificar y Compras dentro de las fechas descargadas.
-8. Sin conexión, guardar/completar todavía no está habilitado. No hay cola de cambios en este bloque. Las fechas sin descargar muestran el aviso correspondiente.
-9. Reconectar. No debe descargarse una copia completa automáticamente. Una nueva entrada puede consultar si hubo novedades y ofrecer actualizar; **Actualizar copia** descarga los datos.
+1. Renombrar un hijo en una instancia y eliminar ese hijo en otra. Programar o cambiar su horario para **Esta y las siguientes**; la renombrada se reconoce y la eliminada no reaparece. Las anteriores no cambian; las completadas conservan su horario al cambiar horarios por alcance.
+2. Agregar hijos para **Toda la serie**. Cerrar/reabrir y comprobar las fechas descargadas. El círculo rápido afecta solo a la instancia; Aplicar completado permite alcance explícito.
+3. Borrar toda la serie de prueba. En **Borrados sin enviar**, deshacer: reaparecen las instancias y excepciones. Repetir y Actualizar si se quiere confirmar el borrado.
+4. Con otra serie y cola vacía, revisar **Dejar de repetir y pasar a Inbox**. Conservar futuras modificadas está activo inicialmente. Cancelar no cambia nada; confirmar conserva la elegida y sus hijos, y sus hijos agendados siguen en Agenda. Actualizar confirma el cambio.
 
-No cerrar sesión para probar el modo avión: cerrar sesión borra la copia privada. El almacenamiento local puede perderse si borras los datos de Safari o el sistema libera espacio; no sustituye el respaldo de la base.
+No usar la serie habitual para probar borrado o separación. El alcance de siguientes usa la fecha original de la repetición, aunque una instancia se haya movido.
 
-## Qué falta para dar la prueba por terminada
+## Recorrido 3: Cocina
 
-Comprobaciones locales realizadas: generación de Prisma sin conexión a la base, compilación Next.js y TypeScript correctas, manifiesto servido con `display: standalone`, enlace Apple presente y tres iconos públicos con respuesta HTTP 200. Se revisaron las trazas de la compilación sin encontrar archivos `.env` incluidos. No se ejecutaron migraciones ni se modificaron actividades para estas comprobaciones. Vercel mostró su pantalla de inicio de sesión; no se creó ni publicó un proyecto.
+Preparar conectadas una receta de prueba con ingrediente obligatorio, opcional y un tramo previo, y dos comidas: A cocina dos porciones y come una; B no cocina y come la restante. Cargar existencias suficientes y Actualizar.
 
-- Crear o vincular el proyecto Vercel y obtener su URL real.
-- Configurar variables y callback OAuth; publicar y revisar esa publicación.
-- Recorrer los pasos anteriores en un iPhone real (la vista estrecha de la PC no verifica Safari).
-- Anotar modelo/iOS, paso que falla y captura si aparece un error, sin compartir secretos.
+1. Sin conexión, cambiar una cantidad en Alacena; registrar una compra en Compras y revisar que sume esa cantidad. Deshacerla y comprobar que se revierte.
+2. Completar el tramo previo de A: marca sus pasos obligatorios en orden, sin consumir ingredientes ni completar la comida.
+3. Completar A desde su círculo: elegir los opcionales usados. Debe descontar exactamente las cantidades planificadas una vez y generar una porción sobrante.
+4. Completar B: usa la sobra sin otro descuento. Intentar deshacer A debe explicar que primero se deshace B.
+5. Deshacer B y A devuelve el consumo registrado. Cerrar/reabrir mantiene existencias, marcas y pendientes.
+6. Reconectar, Actualizar y revisar desde PC. No deben duplicarse compras ni consumos.
 
-Fuentes: [Apple: convertir un sitio en app desde Safari](https://support.apple.com/en-lamr/guide/iphone/iphea86e5236/ios), [Vercel: configuración de compilación](https://vercel.com/docs/builds/configure-a-build), [variables](https://vercel.com/docs/environment-variables), [cron](https://vercel.com/docs/cron-jobs/usage-and-pricing), [Google OAuth web](https://developers.google.com/identity/protocols/oauth2/web-server). La implementación sigue las guías incluidas con la versión de Next.js instalada.
+## Interfaz y límites
+
+- Navegación inferior: Inbox, Agenda, Menú. Cocina está dentro de Menú.
+- Semana móvil muestra tres días y cada flecha avanza un día; PC conserva siete. Mes no debe exigir desplazamiento lateral. Año muestra los doce meses.
+- Planificar móvil muestra un día; PC una tabla semanal. Comprobar editor, teclado, cierre y botones sin quedar ocultos.
+- Solo pueden consultarse sin internet fechas descargadas. Fuera del rango se ofrece descarga explícita.
+- Crear/editar planes, cambiar frecuencia, calendarios, sustituir ingredientes y cambiar su seguimiento todavía requieren conexión y enviar pendientes primero.
+- Si hay conflicto, los cambios siguen guardados hasta elegir una resolución. No borrar almacenamiento ni reinstalar como solución automática.
+- El almacenamiento de Safari puede perderse al borrar datos o liberar espacio; la copia local no sustituye un respaldo.
+
+## Evidencia y alcance de la revisión
+
+La revisión automatizada reciente registró 139 comprobaciones correctas en servicios y cliente local real, con esquemas temporales y Chromium. Consultar [informe](REVISION_BLOQUES_LOCALES_2026-10-09.md). La revisión visual a ancho de iPhone no demuestra funcionamiento en Safari físico: este recorrido debe completarse en el dispositivo del usuario.
+
+## Configuración del alojamiento existente
+
+Vercel usa el repositorio MiAgenda, raíz del proyecto y el comando de vercel.json. No aplica migraciones automáticamente. Variables privadas: NEXTAUTH_URL (dominio estable HTTPS), NEXTAUTH_SECRET, AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET, MIAGENDA_CORE_DATABASE_URL (miagenda_core), MIAGENDA_ALLOWED_EMAILS y CRON_SECRET. No pegarlas en documentos ni chat. El callback de Google debe coincidir con el dominio más /api/auth/callback/google; conservar localhost para desarrollo y no pedir permisos de Calendar. El cron de retención se configura a las 09:00 UTC.

@@ -1,16 +1,16 @@
 # Documentación de MiAgenda
 
-Actualizado: 2026-10-08. El diseño vigente utiliza motor propio; Google solo autentica. PROJECT.md es la base y sus secciones 18/19 prevalecen. Núcleo cerrado para uso diario local en PC; adaptación móvil y copia local de consulta implementadas; despliegue, iPhone real y edición sin conexión pendientes.
+Actualizado: 2026-10-09. El diseño vigente utiliza motor propio; Google solo autentica. PROJECT.md es la base y sus secciones 18/19 prevalecen. La app está publicada en Vercel y el usuario confirmó acceso desde iPhone. La copia permite edición local y envío manual; consultar [Cambios locales](CAMBIOS_LOCALES.md) para sus límites.
 
 ## Documentos vigentes
 
-Última revisión funcional: [subtareas recurrentes, calendario heredado y preparaciones previas](RESULTADOS_SUBTAREAS_PREPARACIONES.md), con 57 comprobaciones aprobadas y una corrección del reloj para preparaciones de cinco minutos.
+Última revisión funcional: [bloques locales del 9 de octubre](REVISION_BLOQUES_LOCALES_2026-10-09.md), con 139 comprobaciones correctas de servicios, persistencia, reintentos, series y Cocina. El informe separa pruebas automatizadas de la revisión visual y de Safari real.
 
 Última revisión de Cocina: [cantidades por comida, disponibilidad, compras y sobras](RESULTADOS_COCINA_CANTIDADES.md), 8 de octubre de 2026. Incluye 45 comprobaciones aprobadas, aceptación visual del usuario y sus límites.
 
 | Documento | Papel |
 |---|---|
-| [Prueba real en iPhone](PRUEBA_IPHONE.md) | Publicación HTTPS, acceso personal, instalación y revisión en Safari; publicación pendiente |
+| [Prueba real en iPhone](PRUEBA_IPHONE.md) | Instalación, actualización y recorrido actual en iPhone/PC |
 | [Copia local](COPIA_LOCAL.md) | Consulta descargada, comprobación al entrar, actualización manual, límites y revisión |
 | [Primera adaptación a iPhone](INTERFAZ_IPHONE.md) | Navegación inferior, Planificar por día y guía de revisión; instalación y revisión en iPhone pendientes |
 | [PROJECT.md](../PROJECT.md) | Contrato aprobado, modificable únicamente con acuerdo del usuario |

@@ -9,6 +9,7 @@ import { TimePicker } from "../components/time-picker";
 import { RecurrenceFields } from "./recurrence-fields";
 import { CoreFeedback, type CalendarView } from "./schedule-editor";
 import type { Draft, Mutate } from "./use-core-feed";
+import { StopRecurrence } from "./stop-recurrence";
 
 type Info = { rule: RecurrenceRule; originalDate: string; anchorDate: string; seriesRevision: number; dataRevision: string };
 type Summary = { added: number; removed: number; preserved: number; effectiveDate: string };
@@ -92,11 +93,13 @@ export function TaskEditor({ item: liveItem, calendars, disabled, mutate, close,
     {!item.parentId && recurrence && info && <RecurrenceFields value={rule} change={value => { setRule(value); setPreview(null); if (scope === "this") setScope("following"); }} startDate={scope === "all" ? info.anchorDate : info.originalDate} disabled={locked || !scopeControls || !scheduled} allowNone={false} />}
     {recurrence && (scopeControls || !!item.parentId) && <label className="form-field">Aplicar cambios a<select disabled={locked} value={scope} onChange={event => setScope(event.target.value as SeriesScope)}><option value="this">Solo esta</option><option value="following">Esta y las siguientes</option><option value="all">Toda la serie</option></select></label>}
     {recurrence && item.parentId && scope!=="this" && <p className="core-muted">El horario se aplica relativo al día de cada principal. Las completadas conservan su horario; los pasos eliminados se omiten. Quitar horario conserva sus casillas.</p>}
+    {localMode()&&recurrence&&scope!=="this"&&<p className="core-muted">Nombre y horarios se guardan aquí hasta Actualizar. Cada principal conserva su fecha; las subtareas pendientes se programan respecto al día de su principal y las completadas conservan su horario. Cambiar la frecuencia todavía requiere conexión y enviar antes tus pendientes.</p>}
     {preview && <section className="core-inline-panel" aria-label="Resumen de repetición"><p>Desde {preview.summary.effectiveDate}: {preview.summary.added} fechas nuevas, {preview.summary.removed} que dejan de repetirse y {preview.summary.preserved} instancias conservadas en los próximos ocho meses.</p><p>Las completadas, pasadas y modificadas se conservan. Los cambios de esta tarea se guardan juntos. Pulsa Guardar otra vez para confirmar.</p></section>}
     {reading && <small role="status">Revisando repetición…</small>}
     {(error || feedback.error) && <p className="pantry-error" role="alert">{error ?? feedback.error}</p>}
     {error && recurrence && <button type="button" className="core-text-button" disabled={locked} onClick={() => setRefresh(value => value + 1)}>Actualizar repetición</button>}
     <div className="core-row-actions"><button className="pantry-add-button" type="submit" disabled={locked || !name.trim()}>Guardar</button><button type="button" className="core-text-button" disabled={disabled} onClick={close}>Cancelar</button></div>
     {scopeControls && recurrence && <button type="button" className="core-text-button" disabled={locked} onClick={applyCompleted}>Aplicar completado…</button>}
+    {!item.parentId&&recurrence&&<StopRecurrence item={item} disabled={locked} mutate={mutate} close={close}/>}
   </form>;
 }

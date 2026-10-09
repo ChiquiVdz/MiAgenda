@@ -53,12 +53,12 @@ function SubtaskRow({ child, disabled, mutate, calendars, parentCalendarId, pare
       <input aria-label="Nombre de subtarea" maxLength={250} required value={text} disabled={disabled} onChange={event => setText(event.target.value)} />
       <button type="submit" className="core-text-button" disabled={disabled || !text.trim() || text.trim() === child.title}>Guardar</button>
       <button type="button" className="core-text-button" disabled={disabled} onClick={() => setEditing(false)}>Cancelar</button>
-    </form> : <span className="core-subtask-name">{child.title}{child.mealOptional&&<small>Opcional</small>}{child.schedule && <small>Agendada · {scheduleLabel(child)}</small>}</span>}
-    {local.pendingIds.includes(child.id) && <small className="local-pending-badge">Sin enviar</small>}
+    </form> : <span className="core-subtask-name">{child.title}{child.mealOptional&&<small>Opcional</small>}{local.pendingIds.includes(child.id) && <small className="local-pending-badge">Sin enviar</small>}</span>}
     {(child.mealRole !== "preparation" || child.mealPriorGroup) && <ScheduleButton inline iconOnly item={child} calendars={calendars} parentDate={parentDate} parentCalendarId={parentCalendarId} disabled={disabled} mutate={quickMutate} />}
     {!editing && child.mealRole !== "preparation" && <button type="button" className="core-text-button core-icon-button" disabled={disabled} aria-label={`Editar subtarea ${child.title}`} title={`Editar ${child.title}`} onClick={() => { setText(child.title); setEditRevision(child.revision); setEditing(true); }}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5" /></svg></button>}
     <button type="button" className="core-text-button core-icon-button" disabled={disabled || child.mealRole === "preparation"} aria-label={`Eliminar subtarea ${child.title}`} title={`Eliminar ${child.title}`} onClick={() => {
       if ((scopeControls && child.recurrence) || window.confirm(`¿Eliminar la subtarea “${child.title}”${child.schedule ? " y su horario" : ""}?`)) void mutate({ action: "deleteTask", id: child.id, expectedRevision: child.revision });
     }}><TrashIcon /></button>
+    {child.schedule && <small className="core-subtask-schedule-label">Agendada · {scheduleLabel(child)}</small>}
   </li>;
 }
