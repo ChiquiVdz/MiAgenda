@@ -21,8 +21,7 @@ Solo se ofrecen calendarios descargados. Programar o mover no crea nuevas repeti
 
 La principal se completa cuando se completan sus hijos, y agregar uno pendiente la reabre. Completar/deshacer la principal modifica sus hijos conforme al núcleo existente. No se altera inventario localmente.
 
-- **Sincronizar:** envía los pendientes; no descarga otros cambios.
-- **Actualizar copia:** envía primero; si todo se confirma, pide la limpieza al servidor y descarga la copia nueva.
+- **Actualizar (único botón):** envía primero; si todo se confirma, pide la limpieza al servidor y descarga la copia nueva.
 - **Sin enviar:** identifica las tareas afectadas; la barra cuenta comandos pendientes, no tareas distintas.
 - **Info → Descartar cambios locales:** pide confirmación. Si un envío quedó sin confirmar, primero debe reintentarse para saber qué recibió el servidor.
 
@@ -50,15 +49,15 @@ Falta de espacio o borrado de datos del sitio puede eliminar cambios que nunca s
 2. Crear «Prueba local» en Inbox, agregar dos subtareas y renombrar una. Ver Sin enviar y el contador. Sin sincronizar, cerrar y volver a abrir: deben conservarse.
 3. Desactivar Wi-Fi y datos móviles. Completar un hijo y después el otro: se completa la principal. Deshacer la principal desmarca los dos. Agregar otro hijo pendiente debe mantenerla pendiente.
 4. Ir a Agenda y usar Anotar: guarda en Inbox sin salir de Agenda. Cambiar entre apartados mantiene las modificaciones.
-5. Reconectar: los pendientes deben seguir sin enviarse. Pulsar Sincronizar; el contador debe llegar a cero. En otro dispositivo, Actualizar copia debe mostrar lo enviado.
-6. Con una tarea ya sincronizada, modificar su nombre en un dispositivo sin enviar y hacer otro cambio en otro dispositivo y sincronizarlo. En el primero, Sincronizar debe ofrecer ambas versiones. Elegir servidor descarta solo los cambios de esa tarea; elegir mis cambios requiere otro Sincronizar.
+5. Reconectar: los pendientes deben seguir sin enviarse. Pulsar Actualizar; el contador debe llegar a cero. En otro dispositivo, Actualizar debe mostrar lo enviado.
+6. Con una tarea ya sincronizada, modificar su nombre en un dispositivo sin enviar y hacer otro cambio en otro dispositivo y sincronizarlo. En el primero, Actualizar debe ofrecer ambas versiones. Elegir servidor descarta solo los cambios de esa tarea; elegir mis cambios requiere otro Actualizar.
 7. Repetir borrando la principal desde el dispositivo conectado antes de enviar la edición pendiente del otro: debe ofrecer Recuperar en Inbox o Descartar.
 8. En una recurrencia, editar/marcar solo una instancia y sincronizar: las otras deben conservar sus estados. Programar una subtarea, cambiarle horario y quitarlo en «Solo esta» debe persistir localmente; siguientes/toda la serie siguen requiriendo conexión y sincronización previa.
 9. Sin conexión, agendar una principal desde Inbox: desaparece de Inbox y se ve en Agenda en las fechas descargadas. Moverla y ajustar duración; cerrar y volver a abrir debe mantener el horario. Quitar horario la devuelve a Inbox con sus subtareas y marcas, y desactiva Conservar/Destacar.
 10. Agendar un hijo cuando la principal esté en Inbox, después agendar la principal en otro calendario descargado: el hijo adopta ese calendario, conservando horas y marcas. Cambiar el calendario de la principal debe trasladar también los hijos completados. Quitar horario a la principal no quita el de sus hijos.
-11. Reconectar sin sincronizar no debe enviar estos horarios. Sincronizar y luego Actualizar copia en otro dispositivo debe reflejarlos. Si otra pantalla cambia el horario de la misma tarea, comprobar ambas elecciones del conflicto.
+11. Reconectar sin sincronizar no debe enviar estos horarios. Actualizar y luego Actualizar en otro dispositivo debe reflejarlos. Si otra pantalla cambia el horario de la misma tarea, comprobar ambas elecciones del conflicto.
 12. Intentar cerrar sesión con pendientes: debe conservarlos e indicar qué hacer. No borrar datos del sitio para probar: eso elimina los cambios sin enviar.
 
-En herramientas de red, crear/editar/completar/agendar/mover/quitar horario con las acciones admitidas no debe enviar POST ni GET a la API. Al pulsar Sincronizar aparece `/api/core/local/sync`; Actualizar copia añade descarga/retención. La comprobación breve de entrada permanece. Las operaciones explícitas conectadas y la instalación de recursos sí usan red.
+En herramientas de red, crear/editar/completar/agendar/mover/quitar horario con las acciones admitidas no debe enviar POST ni GET a la API. Al pulsar Actualizar se envían los pendientes a `/api/core/local/sync` y después se descarga la copia y se pide retención. La comprobación breve de entrada permanece. Las operaciones explícitas conectadas y la instalación de recursos sí usan red.
 
-Compilación de producción y revisión de tipos de aplicación/núcleo correctas. No se han ejecutado pruebas funcionales de esta cola ni simulado pérdida real de red en iPhone en este bloque; no presentar compilación o tipos como esas pruebas. Publicar y revisar en iPhone siguen pendientes de la entrega local.
+Compilación de producción y revisión de tipos de aplicación/núcleo correctas. No se han ejecutado pruebas funcionales de esta cola ni simulado pérdida real de red en iPhone en este bloque; no presentar compilación o tipos como esas pruebas. Los bloques están publicados; su revisión funcional en iPhone continúa.

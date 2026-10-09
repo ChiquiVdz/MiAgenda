@@ -104,7 +104,7 @@ async function clearLocalRecord() {
   window.dispatchEvent(new Event(localEvent));
 }
 export async function signOut(options: Parameters<typeof authSignOut>[0]) {
-  if (outbox.length) { publish({ message: "Hay cambios sin enviar. Pulsa Sincronizar antes de cerrar sesión, o usa Descartar cambios locales en Info." }); return; }
+  if (outbox.length) { publish({ message: "Hay cambios sin enviar. Pulsa Actualizar antes de cerrar sesión, o usa Descartar cambios locales en Info." }); return; }
   if (!navigator.onLine) { publish({ message: "Conéctate para cerrar también tu sesión en el servidor." }); return; }
   try { await clearLocalCopy(); }
   catch (cause) { publish({ message: cause instanceof Error ? cause.message : "No pudimos cerrar sesión." }); return; }
@@ -122,7 +122,7 @@ export async function refreshLocalCopy(remount = true, lockHeld = false): Promis
   publish({ busy: true, message: "" });
   const download = async () => {
     await restoreLocalCopy();
-    if (outbox.length) throw new Error("Hay cambios pendientes de otra pestaña. Pulsa Sincronizar antes de actualizar.");
+    if (outbox.length) throw new Error("Hay cambios pendientes de otra pestaña. Pulsa Actualizar de nuevo para enviarlos.");
     // Local reads never purge. Explicit updates may ask the server for one short
     // retention batch; the production cron is responsible for unattended work.
     if (remount) await fetch("/api/core/retention", { method: "POST" }).catch(() => null);
@@ -222,9 +222,9 @@ export async function synchronizeLocalTasks() {
           if (result.error === "ACCOUNT_CHANGED") publish({ accountBlocked: true });
           if (response.status === 409 && result.error === "LOCAL_CONFLICT") await commitTasks(base, outbox, null, { rootId: result.rootId, item: result.item, missingCalendarId: result.missingCalendarId });
           else if (response.status === 400) await commitTasks(base, outbox, null); // Definitively rejected before a commit; safe to discard later.
-          throw new Error(result.message ?? "No pudimos confirmar el envío. Reintenta Sincronizar.");
+          throw new Error(result.message ?? "No pudimos confirmar el envío. Reintenta Actualizar.");
         }
-        if (!Array.isArray(result.activities) || !Array.isArray(result.removedIds) || typeof result.dataRevision !== "string") throw new Error("Respuesta incierta. Reintenta Sincronizar con el mismo lote.");
+        if (!Array.isArray(result.activities) || !Array.isArray(result.removedIds) || typeof result.dataRevision !== "string") throw new Error("Respuesta incierta. Reintenta Actualizar con el mismo lote.");
         const ids = new Set(sent.operations.map(op => op.command.commandId));
         const nextBase = mergeTaskRows(base, result.activities, result.removedIds);
         // Other-device changes are NOT downloaded implicitly. Keep the snapshot's revision
@@ -241,7 +241,7 @@ export async function synchronizeLocalTasks() {
         } else publish({ newer: true });
         await commitTasks(nextBase, outbox.filter(op => !ids.has(op.command.commandId)), null, null);
       }
-      publish({ reauth: false, message: "Cambios enviados. No descargamos otros cambios hasta que pulses Actualizar copia." });
+      publish({ reauth: false, message: "Cambios enviados. Preparando la actualización de tu copia." });
     } catch (cause) {
       publish({ message: cause instanceof Error ? cause.message : "No pudimos enviar. Conservamos los cambios en este dispositivo." });
       throw cause;
@@ -253,7 +253,7 @@ export async function discardLocalTasks() {
   if (!window.confirm("¿Descartar todos los cambios sin enviar de este dispositivo? Esta acción no se puede deshacer.")) return;
   await exclusive(async () => {
     await restoreLocalCopy();
-    if (batch) throw new Error("Hay un envío sin confirmar. Reintenta Sincronizar antes de descartar, para saber qué recibió el servidor.");
+    if (batch) throw new Error("Hay un envío sin confirmar. Reintenta Actualizar antes de descartar, para saber qué recibió el servidor.");
     if (base) await commitTasks(base, [], null, null);
   });
 }
@@ -297,7 +297,7 @@ export async function resolveLocalConflict(choice: "mine" | "server", replacemen
       remaining = [...remaining, ...additions];
     }
     await commitTasks(nextBase, remaining, null, null);
-    publish({ newer: true, message: choice === "server" ? "Usamos la versión del servidor para esta tarea." : conflict.item ? "Conservamos tus cambios. Pulsa Sincronizar para enviarlos." : "Recuperamos tu tarea en Inbox. Pulsa Sincronizar para guardarla en el servidor." });
+    publish({ newer: true, message: choice === "server" ? "Usamos la versión del servidor para esta tarea." : conflict.item ? "Conservamos tus cambios. Pulsa Actualizar para enviarlos." : "Recuperamos tu tarea en Inbox. Pulsa Actualizar para guardarla en el servidor." });
   });
 }
 
@@ -350,7 +350,7 @@ export async function coreFetch(input: string, init?: RequestInit): Promise<Resp
   const url = new URL(input, window.location.origin), method = init?.method ?? "GET";
   if (method === "GET") {
     if (sync) await sync;
-    if (dirty) return Response.json({ message: "El cambio está guardado en el servidor, pero falta actualizar la copia local. Pulsa Actualizar copia." }, { status: 409 });
+    if (dirty) return Response.json({ message: "El cambio está guardado en el servidor, pero falta actualizar la copia local. Pulsa Actualizar." }, { status: 409 });
     const result = cached(url.searchParams);
     if (result !== undefined) return Response.json(result);
     if (["agenda", "planner"].includes(url.searchParams.get("view") ?? "")) {
@@ -371,7 +371,7 @@ export async function coreFetch(input: string, init?: RequestInit): Promise<Resp
       }
     } catch (cause) { return Response.json({ message: cause instanceof Error ? cause.message : "No pudimos guardar en el dispositivo." }, { status: 400 }); }
   }
-  if (outbox.length) return Response.json({ message: "Esta acción necesita conexión directa. Primero pulsa Sincronizar para enviar los cambios pendientes." }, { status: 409 });
+  if (outbox.length) return Response.json({ message: "Esta acción necesita conexión directa. Primero pulsa Actualizar para enviar los cambios pendientes." }, { status: 409 });
   if (!navigator.onLine) return Response.json({ message: "Esta acción necesita conexión. Puedes anotar, editar y completar tareas normales sin internet." }, { status: 400 });
   return exclusive(async () => {
   await restoreLocalCopy();
@@ -402,7 +402,7 @@ export async function coreFetch(input: string, init?: RequestInit): Promise<Resp
       // A successful mutation may affect several modules. Refresh once before
       // their next reads; do not turn a cache failure into an uncertain write.
       try { await refreshLocalCopy(false, true); }
-      catch { publish({ message: "Cambio guardado. No pudimos actualizar la copia local; pulsa Actualizar copia antes de seguir." }); }
+      catch { publish({ message: "Cambio guardado. No pudimos actualizar la copia local; pulsa Actualizar antes de seguir." }); }
     }
     return response;
   } finally { writes--; }

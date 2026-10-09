@@ -25,7 +25,7 @@ export function CoreInboxView({ initialData, calendars: initialCalendars }: { in
       const result = await response.json();
       if (!response.ok) throw new Error(result.message ?? "No pudimos actualizar los calendarios.");
       if (calendarGeneration.current === version) { setCalendars(result.items); setCalendarError(null); }
-    } catch { setCalendarError("No pudimos actualizar los calendarios. Pulsa Actualizar copia para reintentar."); }
+    } catch { setCalendarError("No pudimos actualizar los calendarios. Pulsa Actualizar para reintentar."); }
   }
   const { data, busy, reading, error, retry, notice, locked, mutate, load, reattempt } = useCoreFeed(initialData, "view=inbox&limit=50", item => !item.parentId && !item.schedule, action => { void refreshCalendars(action); });
 

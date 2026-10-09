@@ -23,6 +23,6 @@ export async function POST(request: Request) {
   } catch (cause) {
     if (cause instanceof LocalTaskConflict) return json({ error: "LOCAL_CONFLICT", rootId: cause.rootId, item: cause.item, missingCalendarId: cause.missingCalendarId, message: cause.message }, 409);
     if (cause instanceof CoreError) return json({ error: cause.code, message: cause.message }, cause.code === "UNAUTHENTICATED" ? 401 : cause.code === "INVALID_INPUT" ? 400 : 409);
-    return json({ message: "No pudimos confirmar el envío. Reintenta Sincronizar; no se duplicarán los cambios." }, 500);
+    return json({ message: "No pudimos confirmar el envío. Reintenta Actualizar; no se duplicarán los cambios." }, 500);
   }
 }

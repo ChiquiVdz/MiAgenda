@@ -9,7 +9,7 @@
 - Abrir la última copia de Inbox, Agenda, Alacena, Recetas, Planificar y Compras sin descargar de nuevo los datos al navegar, incluso con internet disponible.
 - IndexedDB guarda una sola cuenta activa. El service worker guarda únicamente la pantalla pública y sus recursos, sin HTML privado, credenciales ni respuestas API.
 - En la primera entrada con conexión se descarga una copia. Después, al abrir, se comprueban identidad y revisión. Si son distintas aparece «Hay cambios de otro dispositivo. ¿Actualizar ahora?». No se sustituye la copia hasta aceptar. Volver después de más de cinco minutos en segundo plano cuenta como nueva entrada; no hay temporizador periódico.
-- Recuperar foco, reconectar o cambiar de apartado no descarga información automáticamente. Reconectar solo cambia el indicador de conexión. «Actualizar copia» y los botones Actualizar de cada sección descargan explícitamente una copia nueva.
+- Recuperar foco, reconectar o cambiar de apartado no descarga información automáticamente. Reconectar solo cambia el indicador de conexión. El único botón «Actualizar» envía los pendientes y descarga explícitamente una copia nueva.
 - Las operaciones conectadas mantienen su autorización, revisión e idempotencia originales. Recetas y tareas sencillas actualizan la copia con la respuesta del guardado, comprobando la revisión de origen bajo el bloqueo del propietario. Para Cocina, recurrencias, respuestas repetidas o cambios que no admiten un ajuste local seguro se renueva el snapshot. La sincronización incremental general y la cola de modificaciones se harán en bloques posteriores. No es todavía edición local con envío diferido.
 - Navegación interna sin solicitudes RSC de Next. Las rutas de organización son pantallas públicas estáticas; toda lectura privada sigue autorizada en la API. Abrir una pantalla estática sin sesión no concede acceso a datos.
 
@@ -27,7 +27,7 @@ Cerrar sesión limpia la copia local y avisa a otras pestañas. Iniciar acceso c
 
 El navegador puede desalojar datos por falta de espacio o borrado de almacenamiento. La copia no sustituye al respaldo de PostgreSQL. Si falta almacenamiento o falla la descarga se informa del problema y no se promete disponibilidad offline.
 
-La actualización general se concentra en «Actualizar copia» en la barra superior. Los apartados no tienen un segundo botón de actualización. Las acciones específicas de revisar un alcance o actualizar una versión de receta mantienen su función propia.
+La actualización general se concentra en «Actualizar» en la barra superior. Los apartados no tienen un segundo botón de actualización. Las acciones específicas de revisar un alcance o actualizar una versión de receta mantienen su función propia.
 
 ## Cómo revisar
 
