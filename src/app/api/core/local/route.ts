@@ -4,6 +4,7 @@ import { coreRuntime } from "@/lib/core-runtime";
 import { atTime, dateParts, monday, plusDays } from "@/app/core/dates";
 import type { LocalCopy } from "@/app/core/local-contract";
 import type { ActivityView } from "../../../../../reconstruction/core/src/views";
+import { kitchenLedger } from "../../../../../reconstruction/core/src/local-kitchen";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -97,10 +98,11 @@ export async function GET(request: Request) {
     const [definitions, purchases] = await Promise.all([part("recipes", allRecipes()), part("shopping", allShopping())]);
     // Reuse the global availability projection once for the whole local window.
     const planners = [await part("planner", planner.snapshot(ownerId, start, 42, true))];
+    const ledger = await db.$transaction(tx => kitchenLedger(tx,ownerId), {maxWait:10000,timeout:25000});
     const final = await db.user.findUniqueOrThrow({ where: { id: ownerId }, select: { dataRevision: true } });
     if (final.dataRevision.toString() !== dataRevision || [stock, definitions, purchases, calendars, ...planners].some(item => item.dataRevision !== dataRevision)) throw new Error("CHANGED");
     const copy: LocalCopy = { format: 1, ownerId, dataRevision, savedAt: new Date().toISOString(), today, start, end,
-      inbox, agenda, highlighted, calendars: calendars.items, pantry: stock, recipes: definitions, shopping: purchases, planners };
+      inbox, agenda, highlighted, calendars: calendars.items, pantry: stock, recipes: definitions, shopping: purchases, planners, kitchenLedger:ledger };
     const encoded = JSON.stringify(copy);
     if (new TextEncoder().encode(encoded).byteLength > 15 * 1024 * 1024) throw new Error("TOO_LARGE");
     return new Response(encoded, { headers: { ...headers, "Content-Type": "application/json" } });

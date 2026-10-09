@@ -17,9 +17,9 @@ function ingredientView(item: IngredientRow) {
   const preference = item.preferences[0], balance = item.pantry[0];
   return { id: item.id, name: item.name, normalizedName: item.normalizedName, unit: item.unit, scope: item.scope,
     trackingMode: (preference?.trackingMode === "availability" ? "availability" : "quantity") as "quantity" | "availability", available: preference?.trackingMode === "availability" ? balance?.available ?? false : !!balance?.quantity.gt(0),
-    revision: item.revision, hidden: preference?.hidden ?? false, preferenceRevision: preference?.revision ?? null,
+    revision: item.revision, hidden: preference?.hidden ?? false, preferenceRevision: (preference?.revision ?? null) as number | null,
     unitLocked: item.scope === "global" || item.movements.length > 0 || item.recipeSteps.length > 0 || item.shoppingEntries.length > 0 || (balance ? !balance.quantity.isZero() : false),
-    balanceRevision: balance?.revision ?? null, quantity: balance?.quantity.toString() ?? "0", listed: balance?.listed ?? false };
+    balanceRevision: (balance?.revision ?? null) as number | null, quantity: balance?.quantity.toString() ?? "0", listed: balance?.listed ?? false };
 }
 export type IngredientView = ReturnType<typeof ingredientView>;
 export type PantryItemView = { ingredient: IngredientView; quantity: string; revision: number };

@@ -67,7 +67,6 @@ export function projectTask(copy: LocalCopy, op: LocalOperation): { copy: LocalC
     if (c.action !== "createTask" && (!target || target.kind !== "task" || target.mealRole)) throw new Error("La tarea no está disponible en esta copia.");
     const selected = c.action === "createTask" ? root : c.id === root.id ? root : root.children.find(child => child.id === c.id);
     if (!selected) throw new Error("La subtarea ya no está disponible.");
-    if (c.action === "deleteTask" && !selected.parentId) throw new Error("Borrar una principal requiere conexión.");
     if (c.action === "createTask") {
       if (c.parentId !== root.id) throw new Error("Solo se admite un nivel de subtareas.");
       const child = { ...newTask(c.id, c.title, root.id, op.at, c.position), description: c.description, parentCalendarId: root.schedule?.calendarId };
@@ -88,7 +87,13 @@ export function projectTask(copy: LocalCopy, op: LocalOperation): { copy: LocalC
     } else if (c.action === "setCompleted") {
       const mark = (item: typeof selected) => { if (!!item.completedAt !== c.completed) item.completedAt = c.completed ? op.at : null; };
       mark(selected); if (!selected.parentId) root.children.forEach(mark);
-    } else if (c.action === "deleteTask") root.children = root.children.filter(child => child.id !== c.id);
+    } else if (c.action === "deleteTask") {
+      if (c.id === root.id) {
+        const removedIds = [root.id, ...root.children.map(child => child.id)];
+        return { copy: mergeTaskRows(copy, [], removedIds), result: { activities: [], removedIds, calendars: [], dataRevision: copy.dataRevision } };
+      }
+      root.children = root.children.filter(child => child.id !== c.id);
+    }
     else throw new Error("Esta acción requiere conexión.");
     if (root.children.length) {
       if (root.children.some(child => !child.completedAt)) root.completedAt = null;

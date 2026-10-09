@@ -1,5 +1,5 @@
 "use client";
-import { coreFetch, localMode, refreshLocalCopy } from "./local-data";
+import { coreFetch, localMode, refreshLocalCopy, useLocalStatus } from "./local-data";
 import { useEffect, useRef, useState } from "react";
 import type { PantryCommand } from "../../../reconstruction/core/src/pantry-contracts";
 import type { PantryResult, PantrySnapshot } from "../../../reconstruction/core/src/pantry";
@@ -7,6 +7,7 @@ export type PantryDraft = PantryCommand extends infer C ? C extends { commandId:
 export type PantryMutate = (command: PantryDraft, success?: () => void) => Promise<void>;
 type Attempt = { command: PantryCommand; success?: () => void };
 export function usePantryFeed(initial: PantrySnapshot) {
+  const localStatus=useLocalStatus();
   const [data, setData] = useState(initial), [busy, setBusy] = useState(false), [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null), [notice, setNotice] = useState<string | null>(null), [retry, setRetry] = useState(false);
   const writing = useRef(false), attempt = useRef<Attempt | null>(null), controller = useRef<AbortController | null>(null), generation = useRef(0), revision = useRef(initial.dataRevision);
@@ -59,9 +60,10 @@ export function usePantryFeed(initial: PantrySnapshot) {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => { if (localMode()) return; if (document.visibilityState === "visible") { clearTimeout(timer); timer = setTimeout(() => void load(), 150); } };
+    const localRefresh=()=>{void load();}; window.addEventListener("miagenda:local-range",localRefresh);
     window.addEventListener("focus", refresh); window.addEventListener("online", refresh); document.addEventListener("visibilitychange", refresh);
-    return () => { clearTimeout(timer); controller.current?.abort(); window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); };
+    return () => { window.removeEventListener("miagenda:local-range",localRefresh); clearTimeout(timer); controller.current?.abort(); window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return { data, busy, reading, error, retry, notice, locked: busy || retry, mutate, load, reattempt: () => { if (attempt.current) void send(attempt.current); } };
+  return { data, busy, reading, error, retry, notice, locked: localStatus.busy || busy || retry, mutate, load, reattempt: () => { if (attempt.current) void send(attempt.current); } };
 }

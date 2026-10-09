@@ -94,7 +94,6 @@ export class ActivityService {
         if (id) {
           const row = await tx.activity.findFirst({ where: { id, userId, lifecycle: "active" }, include: { mealStep: true } });
           if (!row || row.kind !== "task" || row.mealStep || (row.parentId ?? row.id) !== op.rootId) throw new CoreError("DEPENDENCY", "La tarea o su relación cambió. Actualiza antes de continuar.");
-          if (command.action === "deleteTask" && !row.parentId) throw new CoreError("INVALID_INPUT", "Borrar principales requiere conexión directa.");
           command = command.action === "createTask" ? { ...command, expectedParentRevision: row.revision } : { ...command, expectedRevision: row.revision } as CoreCommand;
         } else if (command.action !== "createTask" || command.id !== op.rootId) throw new CoreError("INVALID_INPUT", "Principal inválida.");
         // Occurrences were materialized under the same lock. Only the selected instance is modified.
@@ -112,7 +111,7 @@ export class ActivityService {
     }, { maxWait: 10000, timeout: 25000 });
   }
 
-  async execute(authenticatedUserId: string, raw: unknown): Promise<CommandResult & { replayed: boolean }> {
+  async execute(authenticatedUserId: string, raw: unknown, actionTime?: Date): Promise<CommandResult & { replayed: boolean }> {
     const userId = uuid(authenticatedUserId, "Usuario autenticado");
     const command = parseCommand(raw);
     const payloadHash = createHash("sha256").update(canonical(command)).digest("hex");
@@ -143,7 +142,7 @@ export class ActivityService {
             const row = await materialize(tx, userId, command.occurrence, targetId);
             applied = command.action === "createTask" ? { ...command, expectedParentRevision: row.revision } : { ...command, expectedRevision: row.revision } as CoreCommand;
           }
-          const result = { ...await this.apply(tx, userId, applied), baseDataRevision: owners[0].dataRevision.toString() };
+          const result = { ...await this.apply(tx, userId, applied, actionTime), baseDataRevision: owners[0].dataRevision.toString() };
           // Commit the effect AND its receipt together. Do not expire receipts yet.
           await tx.commandReceipt.create({ data: {
             userId, commandId: command.commandId, action: command.action, payloadHash,
@@ -318,7 +317,7 @@ export class ActivityService {
       const mealStep = await tx.mealStepData.findFirst({ where: { activityId: row.id, userId }, select: { role: true, sourceStepKey: true, mealRecipe: { select: { recipeRevision: { select: { steps: { select: { stepKey: true, priorGroup: true } } } } } } } });
       const isPriorGroup = !!mealStep?.mealRecipe.recipeRevision.steps.some(step=>step.stepKey===mealStep.sourceStepKey && step.priorGroup);
       if (row.kind === "meal") {
-        if (command.action === "setCompleted") { if(command.completed)await completeMeal(tx,userId,row.id,command.commandId,command.optionalStepIds);else await undoMeal(tx,userId,row.id,command.commandId); }
+        if (command.action === "setCompleted") { if(command.completed)await completeMeal(tx,userId,row.id,command.commandId,command.optionalStepIds,now);else await undoMeal(tx,userId,row.id,command.commandId,now); }
         else if (command.action === "scheduleTask") { await moveMeal(tx, userId, row, command.schedule); }
         else if (command.action === "deleteTask") { removedIds.push(...await retireMeal(tx, userId, row.id)); }
         else if (command.action !== "setFlags") throw new CoreError("DEPENDENCY", "Edita esta comida desde Planificar; su horario es obligatorio.");
@@ -332,7 +331,7 @@ export class ActivityService {
       }
       if (command.action === "setCompleted" && command.optionalStepIds !== undefined && row.kind !== "meal") throw new CoreError("INVALID_INPUT", "La selección de opcionales solo corresponde al círculo de una comida.");
       if (mealStep?.role === "preparation" && command.action === "setCompleted") {
-        const changedSteps = await setMealStep(tx,userId,row.id,command.completed,command.commandId);
+        const changedSteps = await setMealStep(tx,userId,row.id,command.completed,command.commandId,now);
         changedSteps.forEach(id=>affected.add(id));
         const activities=await readActivities(tx,userId,{where:{id:{in:[...affected]},lifecycle:"active"}}),owner=await tx.user.findUniqueOrThrow({where:{id:userId},select:{dataRevision:true}});
         return {activities,removedIds,calendars,dataRevision:owner.dataRevision.toString()};

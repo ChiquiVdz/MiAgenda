@@ -1,63 +1,78 @@
-# Inbox y tareas con envío manual
+# Cambios locales y envío manual
 
-Bloques aprobados el 8 de octubre de 2026. Complementa la copia de consulta; estas reglas sustituyen su limitación histórica de solo lectura.
+Reglas aprobadas el 8 de octubre de 2026. Complementa `PROJECT.md` y sustituye los límites de la etapa inicial de consulta.
 
-## Uso
+## Qué funciona localmente
 
-Las tareas normales se guardan en el dispositivo incluso si tiene internet. No se envían al salir de un campo, navegar, reconectar ni cerrar la pantalla.
+Estas acciones se guardan en IndexedDB incluso con internet. Navegar, reconectar o cerrar la pantalla no las envía.
 
-| Acción | Local, sin consultar servidor |
+| Acción | Sin conexión |
 | --- | --- |
-| Crear tarea sin horario desde Inbox o Anotar | Sí |
-| Editar nombre/descripción de tarea normal | Sí |
-| Agregar, renombrar o eliminar subtareas normales | Sí |
-| Completar/deshacer principal o subtareas normales | Sí, solo esa instancia |
-| Crear tarea programada, agendar/cambiar/quitar horarios, arrastrar y ajustar duración | Sí, tareas normales y subtareas, solo esa instancia |
-| Conservar/Destacar o crear calendario | Requiere conexión |
-| Borrar una principal o afectar varias repeticiones | Requiere conexión |
-| Modificar Cocina, completar comidas/preparaciones o comprar | Requiere conexión |
+| Crear, editar, completar/deshacer tareas normales y sus subtareas | Sí, solo la instancia elegida |
+| Agendar, mover y quitar horario de tareas/subtareas | Sí, con calendarios descargados |
+| Borrar una principal normal y sus hijos | Sí; se puede deshacer antes de enviar |
+| Ajustar cantidades o Tengo/Se terminó en Alacena | Sí, manteniendo el modo de seguimiento |
+| Crear ingredientes personalizados u ocultar sugerencias | Sí; se comprueban nombres similares |
+| Crear, editar o retirar recetas | Sí; los planes mantienen su versión congelada |
+| Agregar/quitar artículos libres y cambiar cantidades de Compras | Sí |
+| Comprar individualmente/en conjunto y deshacer compras | Sí, con efecto local en Alacena |
+| Completar/deshacer comidas y pasos/preparaciones previas | Sí, dentro de la ventana local de Planificar |
+| Crear/editar/copiar/borrar planes de comidas, modificar sus horarios o filas | Con conexión directa |
+| Conservar/Destacar, calendarios, alcances de serie | Con conexión directa |
+| Editar/retirar/fusionar un ingrediente o cambiar cantidad ↔ disponibilidad | Con conexión directa |
+| Revertir efectos antiguos con ingredientes ya retirados/sustituidos | Con conexión directa |
 
-Solo se ofrecen calendarios descargados. Programar o mover no crea nuevas repeticiones. Las fechas fuera de los intervalos descargados conservan el aviso de descarga explícita; no se presupone tener todos sus eventos. Quitar horario mantiene la actividad, hijos y progreso, limpia Conservar/Destacar y no desprograma hijos.
+Las operaciones conectadas requieren enviar antes los cambios pendientes. La ventana local inicial comprende seis semanas: la anterior y cinco desde la actual. Las consultas fuera de ella siguen ofreciendo descarga explícita; no amplían automáticamente las operaciones contables offline.
 
-La principal se completa cuando se completan sus hijos, y agregar uno pendiente la reabre. Completar/deshacer la principal modifica sus hijos conforme al núcleo existente. No se altera inventario localmente.
+## Un solo botón
 
-- **Actualizar (único botón):** envía primero; si todo se confirma, pide la limpieza al servidor y descarga la copia nueva.
-- **Sin enviar:** identifica las tareas afectadas; la barra cuenta comandos pendientes, no tareas distintas.
-- **Info → Descartar cambios locales:** pide confirmación. Si un envío quedó sin confirmar, primero debe reintentarse para saber qué recibió el servidor.
+**Actualizar** envía primero las colas con recibos idempotentes. Si todas se confirman, solicita un lote de retención y descarga la copia completa reciente. No envía mientras haya un conflicto por resolver. El contador cuenta operaciones, no objetos distintos.
 
-Las acciones que aún necesitan servidor se bloquean si hay pendientes. Primero sincronizar. No interpretar el estado Sin enviar como un respaldo en Neon.
+**Borrados sin enviar** permite deshacer una eliminación. Un envío de resultado incierto debe reintentarse antes de deshacer o descartar sus operaciones. Borrar una ocurrencia recurrente offline afecta únicamente a esa ocurrencia; toda la serie y siguientes permanecen conectadas.
 
-## Conflictos y retención
+**Info → Descartar cambios locales** solicita confirmación y protege los envíos sin confirmar. Cerrar sesión o cambiar de cuenta nunca elimina una cola pendiente silenciosamente.
 
-Antes de enviar, el servidor compara principal e hijos con las revisiones descargadas. Si alguien cambió la misma tarea, el lote no se aplica: se ofrece conservar los cambios locales o usar la versión del servidor. Conservar cambios reemplaza texto y marcas de ese conjunto y los horarios modificados localmente; los horarios sin cambios locales mantienen la versión del servidor. Si un hijo desapareció, se recupera como nuevo hijo y solo recupera su horario si fue modificado localmente. Si un calendario dejó de existir, se pide otro calendario descargado antes de conservar los cambios. Si la principal fue eliminada o ya no pertenece a su recurrencia, se ofrece recuperar como nueva tarea en Inbox con sus hijos, sin horarios, o descartar sus cambios. Una tarea nueva cuyo calendario desapareció puede conservar su horario eligiendo otro.
+## Cocina e inventario
 
-Si caduca la sesión o la cuenta es diferente, se conservan los pendientes para entrar con la cuenta original. No se borran por una respuesta de error. Cerrar sesión con pendientes requiere sincronizarlos o descartarlos expresamente.
+La copia contiene una proyección contable acotada: existencias, entradas/recibos de compras, consumos activos, tandas/uso de porciones y la correspondencia entre pasos y comidas. No contiene credenciales. Es provisional; PostgreSQL sigue siendo la autoridad al enviar.
 
-La fecha de completar es la del dispositivo al realizar la acción; un reloj adelantado se limita al presente del servidor. No se purga nada en IndexedDB. Después del envío, la retención de cinco días la aplica el servidor junto con las protecciones de subtareas y Conservar. Una tarea completada hace más de cinco días puede retirarse al actualizar después de sincronizar.
+- Compras usa todos los planes pendientes con Cocinar activo, independientemente de la semana visible. Usa las cantidades elegidas y distingue disponibilidad de cantidad.
+- Comprar suma exactamente la cantidad registrada. Una compra de disponibilidad marca Tengo sin inventar gramos/piezas. Deshacer respeta el stock que queda y la cadena de compras de disponibilidad.
+- Completar consume una sola vez, usando los opcionales seleccionados. Las cantidades se agregan y redondean a precisión de stock después de sumarlas; se conservan piezas ajustadas/fracciones y planes antiguos proporcionales.
+- Los pasos previos conservan el orden de sus tramos, no completan por sí solos la comida ni descuentan ingredientes. Los opcionales se preguntan al finalizar el bloque, como en el flujo conectado.
+- Una comida cocinada offline genera sus tandas locales. Otra puede comer esas sobras; ambas operaciones se envían en su orden. Las sobras previstas de una comida todavía pendiente nunca se convierten en porciones reales.
+- Deshacer devuelve el consumo registrado y revierte usos/tandas. Si otra comida usó las sobras, primero hay que deshacerla. Deshacer conserva los pasos de tramos previos conforme a las reglas existentes.
+- Agenda, Planificar, Alacena y Compras se recalculan en la misma copia; navegar entre apartados no hace consultas automáticas para estas acciones.
 
-## Implementación y límites
+## Conflictos
 
-IndexedDB conserva snapshot base, proyección visible, cola y lote pendiente de confirmar. Web Locks coordina escrituras entre pestañas; se necesita un navegador que disponga de esa API. No se guardan credenciales. La estructura de IndexedDB pasa a versión 2 sin borrar la copia de formato 1 existente: impide que una pantalla antigua de solo consulta sobrescriba la cola. Después de publicar, cerrar y volver a abrir las pantallas de la versión anterior.
+Tareas normales verifican revisiones de la principal y sus hijos. Se elige conservar cambios locales o servidor. Si se pretendía borrar una principal modificada remotamente, se ofrece confirmar el borrado o conservarla; no se recupera como una tarea nueva accidentalmente.
 
-Cada lote inmutable tiene ID y recibo por propietario, se persiste antes de usar la red y se confirma en una transacción. El servidor valida sesión, origen, propietario esperado, acciones permitidas y revisiones. Un reintento no duplica altas ni efectos. Se envían prefijos de hasta 30 comandos y menos de 60 KB; la cola admite hasta 500 comandos, con aviso antes de superarlos. No se compactan recibos ni se añaden tablas o migraciones.
+Cocina usa una comprobación conservadora de revisión global antes de aplicar un lote. Si otro dispositivo cambió datos desde la base de la cola, se detiene: las correcciones manuales nunca pisan existencias desconocidas silenciosamente. El aviso ofrece conservar y volver a validar la cola, o usar Cocina del servidor **descartando expresamente todos los cambios de Cocina aún no enviados**, sin descartar tareas normales. Si un ingrediente creado localmente coincide con otro existente y compatible, permite elegir ese ingrediente y cambiar las referencias de la cola. No unifica automáticamente nombres parecidos ni unidades distintas.
 
-Falta de espacio o borrado de datos del sitio puede eliminar cambios que nunca se enviaron. No sustituye el respaldo de la base de datos. Se conserva la última copia descargada al fallar una actualización.
+Si conservar encuentra stock insuficiente, porciones reales insuficientes, ingredientes incompatibles o dependencias, no se aplica el lote. La cola sigue guardada. Este bloque no incorpora un editor de operaciones individuales en conflicto; se puede revisar la elección o descartar expresamente la cola de Cocina y repetir los cambios necesarios.
 
-## Revisión manual del bloque
+Si la sesión caduca, hay que entrar con la cuenta original. Desconexión o error de respuesta no equivale a perder cambios ni a confirmar el envío.
 
-1. Abrir la versión nueva con internet y esperar que Info indique pantallas listas para abrir sin conexión.
-2. Crear «Prueba local» en Inbox, agregar dos subtareas y renombrar una. Ver Sin enviar y el contador. Sin sincronizar, cerrar y volver a abrir: deben conservarse.
-3. Desactivar Wi-Fi y datos móviles. Completar un hijo y después el otro: se completa la principal. Deshacer la principal desmarca los dos. Agregar otro hijo pendiente debe mantenerla pendiente.
-4. Ir a Agenda y usar Anotar: guarda en Inbox sin salir de Agenda. Cambiar entre apartados mantiene las modificaciones.
-5. Reconectar: los pendientes deben seguir sin enviarse. Pulsar Actualizar; el contador debe llegar a cero. En otro dispositivo, Actualizar debe mostrar lo enviado.
-6. Con una tarea ya sincronizada, modificar su nombre en un dispositivo sin enviar y hacer otro cambio en otro dispositivo y sincronizarlo. En el primero, Actualizar debe ofrecer ambas versiones. Elegir servidor descarta solo los cambios de esa tarea; elegir mis cambios requiere otro Actualizar.
-7. Repetir borrando la principal desde el dispositivo conectado antes de enviar la edición pendiente del otro: debe ofrecer Recuperar en Inbox o Descartar.
-8. En una recurrencia, editar/marcar solo una instancia y sincronizar: las otras deben conservar sus estados. Programar una subtarea, cambiarle horario y quitarlo en «Solo esta» debe persistir localmente; siguientes/toda la serie siguen requiriendo conexión y sincronización previa.
-9. Sin conexión, agendar una principal desde Inbox: desaparece de Inbox y se ve en Agenda en las fechas descargadas. Moverla y ajustar duración; cerrar y volver a abrir debe mantener el horario. Quitar horario la devuelve a Inbox con sus subtareas y marcas, y desactiva Conservar/Destacar.
-10. Agendar un hijo cuando la principal esté en Inbox, después agendar la principal en otro calendario descargado: el hijo adopta ese calendario, conservando horas y marcas. Cambiar el calendario de la principal debe trasladar también los hijos completados. Quitar horario a la principal no quita el de sus hijos.
-11. Reconectar sin sincronizar no debe enviar estos horarios. Actualizar y luego Actualizar en otro dispositivo debe reflejarlos. Si otra pantalla cambia el horario de la misma tarea, comprobar ambas elecciones del conflicto.
-12. Intentar cerrar sesión con pendientes: debe conservarlos e indicar qué hacer. No borrar datos del sitio para probar: eso elimina los cambios sin enviar.
+## Garantías y límites
 
-En herramientas de red, crear/editar/completar/agendar/mover/quitar horario con las acciones admitidas no debe enviar POST ni GET a la API. Al pulsar Actualizar se envían los pendientes a `/api/core/local/sync` y después se descarga la copia y se pide retención. La comprobación breve de entrada permanece. Las operaciones explícitas conectadas y la instalación de recursos sí usan red.
+IndexedDB versión 3 migra sin borrar la copia y las tareas pendientes anteriores; impide que clientes antiguos sobrescriban la cola nueva. Web Locks coordina pestañas. Persistimos snapshot base, proyección, ambas colas, conflicto y payload inmutable antes de enviar. No se purga el almacenamiento local por cumplir cinco días; la retención se resuelve en el servidor después de sincronizar.
 
-Compilación de producción y revisión de tipos de aplicación/núcleo correctas. No se han ejecutado pruebas funcionales de esta cola ni simulado pérdida real de red en iPhone en este bloque; no presentar compilación o tipos como esas pruebas. Los bloques están publicados; su revisión funcional en iPhone continúa.
+Tareas: hasta 500 comandos; prefijos de 30. Cocina: hasta 200 comandos; prefijos de 20. La cola de Cocina está limitada además a 4 MB y los cambios individuales a 55 KB; se avisa antes de guardar un cambio que exceda el límite. Los payloads tienen menos de 60 KB y se reducen cuando sea necesario. Cada lote de Cocina se confirma en una sola transacción usando los servicios existentes; un fallo no deja compras/consumos parciales de ese lote. Lotes anteriores ya confirmados se conservan. Recibos por propietario evitan duplicados, incluso al comprar y deshacer antes del primer envío; los IDs provisionales se sustituyen por los confirmados.
+
+Los recibos del servidor conservan confirmación/referencias, no una copia completa permanente de Cocina. La proyección de reversión tiene límites de 5.000 registros por conjunto y el snapshot completo, 15 MB; excederlos informa y conserva la copia anterior. No hay tablas, migraciones ni dependencias nuevas. El navegador puede desalojar datos por falta de espacio: la copia no sustituye al respaldo de PostgreSQL, y los cambios sin enviar solo existen en ese dispositivo.
+
+La fecha de completar una comida offline se conserva, limitada al presente del servidor si el reloj está adelantado. Las fechas de registro de recibos de compras se confirman al enviar.
+
+## Revisar en iPhone
+
+1. Con internet, cerrar/reabrir la versión nueva y pulsar **Actualizar**. Esperar que Info indique pantallas listas. Si estaba abierta una versión anterior, cerrar también otras pestañas antiguas.
+2. Preparar conectadas dos comidas de una receta: la primera cocina 2 porciones y come 1; la segunda no cocina y come 1. Asegurar stock para la primera, dejando faltantes de otro ingrediente para probar Compras. Incluir un opcional y un tramo previo si se quieren comprobar.
+3. Modo avión y Wi-Fi apagado: crear una tarea con hijos, borrarla y usar **Borrados sin enviar → Deshacer borrado**. Borrarla otra vez si se quiere comprobar el envío.
+4. En Alacena cambiar una cantidad; crear un ingrediente y una receta. En Compras registrar una compra individual, comprobar Alacena y deshacerla. Comprar lo necesario para cocinar.
+5. Completar el tramo previo: no debe consumir. Completar la primera comida y seleccionar opcionales: debe consumir una vez. Completar la segunda: usa las sobras sin otro descuento. Deshacer la primera debe pedir primero deshacer la segunda. Deshacer segunda y primera devuelve ingredientes.
+6. Cerrar y volver a abrir sin internet: tarjetas, stock, recetas, compras, marcas y contador deben mantenerse. Reconectar por sí solo no debe enviar nada.
+7. Pulsar **Actualizar**. El contador debe llegar a cero. En PC pulsar Actualizar y comprobar los mismos datos y ausencia de compras duplicadas.
+8. Conflicto opcional: en iPhone dejar una corrección de Alacena sin enviar; modificar desde PC y actualizar allí. Al actualizar iPhone debe pedir decisión y conservar la cola.
+
+Compilación y comprobación de tipos de aplicación/núcleo correctas. No se ejecutaron pruebas funcionales ni modificaciones de datos privados para simular este bloque; estos recorridos y pérdida real de conectividad en iPhone quedan para revisión. Compilar no demuestra por sí solo los recorridos offline.

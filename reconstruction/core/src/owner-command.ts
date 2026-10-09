@@ -13,7 +13,7 @@ function canonical(value: unknown): string {
 }
 /** Same owner lock and receipt namespace for activities and module commands. */
 export async function executeOwnerCommand<T extends object>(db: PrismaClient, authenticatedOwner: string,
-  command: { commandId: string; action: string }, apply: (tx: Prisma.TransactionClient, userId: string) => Promise<T>) {
+  command: { commandId: string; action: string }, apply: (tx: Prisma.TransactionClient, userId: string) => Promise<T>, timeout = 15000) {
   const userId = uuid(authenticatedOwner), payloadHash = createHash("sha256").update(canonical(command)).digest("hex");
   for (let attempt = 0; ; attempt++) {
     try {
@@ -29,7 +29,7 @@ export async function executeOwnerCommand<T extends object>(db: PrismaClient, au
         const result = { ...await apply(tx, userId), baseDataRevision: owners[0].dataRevision.toString() };
         await tx.commandReceipt.create({ data: { userId, commandId: command.commandId, action: command.action, payloadHash, result: result as unknown as Prisma.InputJsonValue } });
         return { ...result, replayed: false };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10000, timeout: 15000 });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10000, timeout });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         const code = String(error.meta?.code ?? "");

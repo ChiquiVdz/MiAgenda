@@ -9,6 +9,10 @@ import type { CommandResult } from "../../../reconstruction/core/src/views";
 import type { ActivityView } from "../../../reconstruction/core/src/views";
 import { parseCommand, parseSchedule, type CoreCommand, type ScheduleInput } from "../../../reconstruction/core/src/contracts";
 import { localTaskCommand, type LocalOperation, type LocalBatch } from "../../../reconstruction/core/src/local-task-contract";
+import { kitchenCommand, localKitchenActions, type KitchenOperation, type KitchenBatch } from "../../../reconstruction/core/src/local-kitchen-contract";
+import type { KitchenSnapshot } from "../../../reconstruction/core/src/local-kitchen";
+import { projectKitchen, projectKitchenOperations, supportsKitchenLocally } from "./local-kitchen";
+import { normalizedIngredientName, similarIngredientName } from "../../../reconstruction/core/src/ingredient-input";
 import { mergeTaskRows, projectTask, projectTasks, rootFor, taskGuard, taskRows } from "./local-tasks";
 
 const DB = "miagenda-local-v1", STORE = "account";
@@ -18,9 +22,11 @@ let sync: Promise<LocalCopy> | null = null;
 let epoch = 0, writes = 0, dirty = false;
 let extra = new Map<string, unknown>();
 let base: LocalCopy | null = null, outbox: LocalOperation[] = [], batch: LocalBatch | null = null;
-type Conflict = { rootId: string; item: ActivityView | null; missingCalendarId?: string };
+let kitchenOutbox:KitchenOperation[]=[], kitchenBatch:KitchenBatch|null=null, receiptIds:Record<string,string>={};
+type KitchenIssue={snapshot:KitchenSnapshot;message:string};
+type Conflict = { rootId: string; item: ActivityView | null; missingCalendarId?: string; deleting?:boolean };
 type LocalDraft = CoreCommand extends infer C ? C extends { commandId: string } ? Omit<C, "commandId"> : never : never;
-let state = { online: true, busy: false, message: "", newer: false, ready: false, range: "", shellReady: false, pending: 0, pendingIds: [] as string[], conflict: null as Conflict | null, accountBlocked: false, reauth: false };
+let state = { online: true, busy: false, message: "", newer: false, ready: false, range: "", shellReady: false, pending: 0, pendingIds: [] as string[], conflict: null as Conflict | null, kitchenConflict:null as KitchenIssue|null, deletions:[] as {id:string;title:string}[], accountBlocked: false, reauth: false };
 const listeners = new Set<() => void>();
 function publish(update: Partial<typeof state>) { state = { ...state, ...update }; listeners.forEach(fn => fn()); }
 export function useLocalStatus() { return useSyncExternalStore(fn => { listeners.add(fn); return () => listeners.delete(fn); }, () => state, () => state); }
@@ -30,8 +36,13 @@ export function isLocalPath(path: string) { return ["/", "/local", "/inbox", "/a
 export function setLocalOnline(online: boolean) { publish({ online }); }
 export function setShellReady(shellReady: boolean) { publish({ shellReady }); }
 export function pendingTask(id: string) { return state.pendingIds.includes(id); }
-function pendingState() { publish({ pending: outbox.length, pendingIds: [...new Set(outbox.flatMap(op => [op.rootId, op.command.id, ...(op.command.action === "addSubtasks" ? op.command.children.map(child => child.id) : [])]))] }); }
-type SavedRecord = { copy: LocalCopy; extra: [string, unknown][]; base?: LocalCopy; outbox?: LocalOperation[]; batch?: LocalBatch | null; conflict?: Conflict | null };
+function pendingState() {
+  publish({pending:outbox.length+kitchenOutbox.length,
+    deletions:outbox.filter(op=>op.command.action==="deleteTask"&&op.command.id===op.rootId).map(op=>({id:op.command.commandId,title:(base?taskRows(base).get(op.rootId)?.title:null)??outbox.flatMap(i=>i.command.action==="createTask"&&i.command.id===op.rootId?[i.command.title]:[])[0]??"Tarea eliminada"})),
+    pendingIds:[...new Set([...outbox.flatMap(op=>[op.rootId,op.command.id,...(op.command.action==="addSubtasks"?op.command.children.map(child=>child.id):[])]),...kitchenOutbox.flatMap(op=>"id" in op.command?[op.command.id]:[])])],
+  });
+}
+type SavedRecord = { copy: LocalCopy; extra: [string, unknown][]; base?: LocalCopy; outbox?: LocalOperation[]; batch?: LocalBatch | null; conflict?: Conflict | null; kitchenOutbox?:KitchenOperation[]; kitchenBatch?:KitchenBatch|null; receiptIds?:Record<string,string>; kitchenConflict?:KitchenIssue|null };
 
 // Coordinate durable writes across tabs as well as within this page.
 async function exclusive<T>(work: () => Promise<T>): Promise<T> {
@@ -40,17 +51,126 @@ async function exclusive<T>(work: () => Promise<T>): Promise<T> {
 }
 function changed() { window.dispatchEvent(new CustomEvent(localEvent, { detail: { remount: false } })); window.dispatchEvent(new Event("miagenda:local-range")); }
 async function commitTasks(nextBase: LocalCopy, nextOps: LocalOperation[], nextBatch: LocalBatch | null, nextConflict: Conflict | null = state.conflict) {
-  const next = projectTasks(nextBase, nextOps);
-  await record({ copy: next, base: nextBase, extra: [...extra], outbox: nextOps, batch: nextBatch, conflict: nextConflict });
+  const next = projectKitchenOperations(projectTasks(nextBase, nextOps), kitchenOutbox);
+  await record({ copy: next, base: nextBase, extra: [...extra], outbox: nextOps, batch: nextBatch, conflict: nextConflict, kitchenOutbox,kitchenBatch,receiptIds,kitchenConflict:state.kitchenConflict });
   base = nextBase; copy = next; outbox = nextOps; batch = nextBatch;
   publish({ conflict: nextConflict }); pendingState(); changed();
   return next;
 }
 
+function mergeKitchenSnapshot(previous:LocalCopy,snapshot:KitchenSnapshot):LocalCopy {
+  const next={...previous,...snapshot};
+  const incoming=snapshot.planners.flatMap(p=>p.meals.map(m=>m.activity));
+  const removed=previous.planners.flatMap(p=>p.meals).filter(m=>!incoming.some(item=>item.id===m.id)).flatMap(m=>[m.id,...m.activity.children.map(c=>c.id)]);
+  return mergeTaskRows(next,incoming,removed);
+}
+async function commitKitchen(nextBase:LocalCopy,operations:KitchenOperation[],frozen:KitchenBatch|null,ids=receiptIds,issue:KitchenIssue|null=state.kitchenConflict) {
+  let next:LocalCopy;
+  try{next=projectKitchenOperations(projectTasks(nextBase,outbox),operations);}
+  catch(cause){
+    // A confirmed batch must be acknowledged even if a newer snapshot invalidates a later local operation.
+    if(!issue)throw cause;
+    next=copy??nextBase;
+  }
+  await record({copy:next,base:nextBase,extra:[...extra],outbox,batch,conflict:state.conflict,kitchenOutbox:operations,kitchenBatch:frozen,receiptIds:ids,kitchenConflict:issue});
+  base=nextBase;copy=next;kitchenOutbox=operations;kitchenBatch=frozen;receiptIds=ids;publish({kitchenConflict:issue});pendingState();changed();return next;
+}
+async function enqueueKitchen(raw:unknown):Promise<Response>{
+  return exclusive(async()=>{
+    await restoreLocalCopy();if(!copy||!base)throw new Error("Primero descarga tu copia.");
+    if(state.accountBlocked||state.busy||sync||writes||dirty)throw new Error("Espera a que termine la operación actual o actualiza la copia.");
+    if(state.kitchenConflict)throw new Error("Primero resuelve los cambios pendientes de Cocina en el aviso de arriba.");
+    const command=kitchenCommand(raw),previous=kitchenOutbox.find(op=>op.command.commandId===command.commandId);
+    if(previous&&JSON.stringify(previous.command)!==JSON.stringify(command))throw new Error("Este intento ya contiene otro cambio.");
+    if(previous){const before=projectKitchenOperations(projectTasks(base,outbox),kitchenOutbox.slice(0,kitchenOutbox.indexOf(previous)));return Response.json({...projectKitchen(before,previous).result,localPending:true});}
+    if(kitchenOutbox.length>=200)throw new Error("Tienes 200 cambios de Cocina pendientes. Pulsa Actualizar antes de agregar más.");
+    const operation={command,at:new Date().toISOString()};
+    if(new TextEncoder().encode(JSON.stringify(operation)).byteLength>55000)throw new Error("Este cambio es demasiado grande para enviarse de forma segura. Reduce el texto o divide los pasos antes de guardar.");
+    if(new TextEncoder().encode(JSON.stringify([...kitchenOutbox,operation])).byteLength>4*1024*1024)throw new Error("La cola de Cocina llegó a 4 MB. Pulsa Actualizar antes de agregar más cambios.");
+    const projected=projectKitchen(copy,operation);
+    if(new TextEncoder().encode(JSON.stringify(projected.copy)).byteLength>15*1024*1024)throw new Error("La copia local llegó a su límite. Conservamos tus cambios anteriores; actualiza antes de agregar más.");
+    await commitKitchen(base,[...kitchenOutbox,operation],kitchenBatch);
+    return Response.json({...projected.result,localPending:true});
+  });
+}
+export async function undoPendingDeletion(commandId:string){
+  return exclusive(async()=>{await restoreLocalCopy();if(!base||state.busy)return;if(batch?.operations.some(op=>op.command.commandId===commandId))throw new Error("Este borrado ya se envió y falta confirmarlo. Pulsa Actualizar antes de continuar.");await commitTasks(base,outbox.filter(op=>op.command.commandId!==commandId),batch);});
+}
+async function synchronizeKitchen(){
+  return exclusive(async()=>{
+    await restoreLocalCopy();if(!copy||!base||!kitchenOutbox.length)return;
+    if(!navigator.onLine)throw new Error("Conéctate para enviar los cambios de Cocina; siguen guardados aquí.");
+    if(state.kitchenConflict)throw new Error("Primero resuelve los cambios de Cocina.");
+    if(sync||writes)throw new Error("Espera a que termine la operación actual.");
+    publish({busy:true,message:""});
+    try{
+      while(kitchenOutbox.length){
+        if(!kitchenBatch){
+          const operations=kitchenOutbox.slice(0,20);let draft:KitchenBatch;
+          do{draft={action:"syncLocalKitchen",commandId:crypto.randomUUID(),expectedDataRevision:base!.dataRevision,start:base!.start,operations:[...operations],receiptIds};if(new TextEncoder().encode(JSON.stringify(draft)).byteLength<=60000)break;operations.pop();}while(operations.length);
+          if(!operations.length)throw new Error("Un cambio de Cocina supera el tamaño permitido. Conservamos la cola.");
+          await commitKitchen(base,kitchenOutbox,draft!);
+        }
+        const sent=kitchenBatch!,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
+        let response:Response;try{response=await fetch("/api/core/local/kitchen",{method:"POST",headers:{"Content-Type":"application/json","X-MiAgenda-Owner":copy.ownerId},body:JSON.stringify(sent),signal:controller.signal});}finally{clearTimeout(timer);}
+        const result=await response.json();
+        if(!response.ok){
+          if(response.status===401)publish({reauth:true});if(result.error==="ACCOUNT_CHANGED")publish({accountBlocked:true});
+          if(response.status===409&&result.error==="KITCHEN_CONFLICT"&&result.snapshot)await commitKitchen(base,kitchenOutbox,null,receiptIds,{snapshot:result.snapshot,message:result.message});
+          else if(response.status===400)await commitKitchen(base,kitchenOutbox,null);
+          throw new Error(result.message??"No pudimos confirmar el envío. Reintenta Actualizar con el mismo lote.");
+        }
+        if(!result.snapshot?.kitchenLedger||typeof result.dataRevision!=="string"||!result.receiptIds)throw new Error("Respuesta incierta. Reintenta Actualizar con el mismo lote.");
+        const done=new Set(sent.operations.map(op=>op.command.commandId)),remaining=kitchenOutbox.filter(op=>!done.has(op.command.commandId)).map(op=>op.command.action==="undoShoppingPurchase"?{...op,command:{...op.command,id:result.receiptIds[op.command.id]??op.command.id}}:op);
+        const nextBase=mergeKitchenSnapshot(base,result.snapshot);
+        let issue:KitchenIssue|null=null;
+        try{projectKitchenOperations(projectTasks(nextBase,outbox),remaining);}catch(cause){issue={snapshot:result.snapshot,message:cause instanceof Error?cause.message:"Un cambio pendiente necesita revisión."};}
+        await commitKitchen(nextBase,remaining,null,{},issue);
+        if(issue)throw new Error(issue.message);
+      }
+      publish({reauth:false,message:"Cambios de Cocina enviados. Preparando tu copia."});
+    }catch(cause){publish({message:cause instanceof Error?cause.message:"No pudimos confirmar el envío. Conservamos tus cambios."});throw cause;}
+    finally{publish({busy:false});}
+  });
+}
+function conflictingIngredient(){
+  const issue=state.kitchenConflict;if(!issue)return undefined;
+  return kitchenOutbox.map(op=>op.command).find(c=>c.action==="createIngredient"&&issue.snapshot.pantry.ingredients.some(i=>i.unit===c.unit&&i.trackingMode===(c.trackingMode??"quantity")&&similarIngredientName(i.normalizedName,normalizedIngredientName(c.name))));
+}
+export function kitchenIngredientMatches(){
+  const issue=state.kitchenConflict;if(!issue)return [];
+  const creating=conflictingIngredient();
+  if(!creating||creating.action!=="createIngredient")return [];
+  return issue.snapshot.pantry.ingredients.filter(i=>i.unit===creating.unit&&i.trackingMode===(creating.trackingMode??"quantity")&&similarIngredientName(i.normalizedName,normalizedIngredientName(creating.name)));
+}
+export async function resolveKitchenConflict(choice:"mine"|"server",existingIngredientId?:string){
+  return exclusive(async()=>{
+    await restoreLocalCopy();const issue=state.kitchenConflict;if(!issue||!base)return;
+    const nextBase=mergeKitchenSnapshot(base,issue.snapshot);let operations=choice==="server"?[]:structuredClone(kitchenOutbox);
+    if(existingIngredientId){
+      const match=kitchenIngredientMatches().find(i=>i.id===existingIngredientId),creating=conflictingIngredient();
+      if(!match||!creating||creating.action!=="createIngredient")throw new Error("Elige un ingrediente compatible del aviso.");
+      const previousId=creating.id;
+      operations=operations.filter(op=>op.command.commandId!==creating.commandId).map(op=>{
+        const c={...op.command};if("id" in c&&c.id===previousId)c.id=match.id;
+        if("ingredientId" in c&&c.ingredientId===previousId)c.ingredientId=match.id;
+        if("recipe" in c&&c.recipe)c.recipe={...c.recipe,steps:c.recipe.steps.map(s=>s.ingredientId===previousId?{...s,ingredientId:match.id,expectedIngredientRevision:match.revision}:s)};
+        if("key" in c&&c.key===`i:${previousId}`)c.key=`i:${match.id}`;
+        if("items" in c)c.items=c.items.map(i=>i.key===`i:${previousId}`?{...i,key:`i:${match.id}`}:i);
+        return {...op,command:c};
+      });
+    }
+    // Rebase only after the user's explicit choice. Validate every local effect again.
+    projectKitchenOperations(projectTasks(nextBase,outbox),operations);
+    await commitKitchen(nextBase,operations,null,receiptIds,null);
+    publish({newer:true,message:choice==="mine"?"Conservamos tus cambios revisados. Pulsa Actualizar para enviarlos.":"Descartamos los cambios pendientes de Cocina y usamos la versión del servidor. Las tareas pendientes se conservan."});
+  });
+}
+
 async function database() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     // Version fence: old read-only clients must not overwrite a durable outbox.
-    const request = indexedDB.open(DB, 2);
+    const request = indexedDB.open(DB, 3);
     request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE); };
     request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
     request.onerror = () => reject(new Error("No pudimos abrir el almacenamiento del dispositivo."));
@@ -64,7 +184,7 @@ async function record(value?: SavedRecord | null) {
       let result: SavedRecord | undefined;
       if (value === undefined) { const request = store.get("active"); request.onsuccess = () => { result = request.result; }; }
       else if (value === null) store.clear();
-      else store.put({ base: outbox.length ? base : value.copy, outbox, batch, conflict: state.conflict, ...value }, "active");
+      else store.put({ base: outbox.length || kitchenOutbox.length ? base : value.copy, outbox, batch, conflict: state.conflict, kitchenOutbox,kitchenBatch,receiptIds,kitchenConflict:state.kitchenConflict, ...value }, "active");
       tx.oncomplete = () => resolve(result);
       tx.onerror = tx.onabort = () => reject(new Error("No pudimos guardar la copia local. Revisa el espacio disponible."));
     });
@@ -77,10 +197,10 @@ export async function restoreLocalCopy() {
   catch (cause) { publish({ message: "No pudimos abrir el almacenamiento local. Revisa que este navegador permita guardar datos del sitio." }); throw cause; }
   if (version !== epoch) return copy;
   if (saved?.copy.format === 1) {
-    copy = saved.copy; base = saved.base ?? saved.copy; outbox = saved.outbox ?? []; batch = saved.batch ?? null; extra = new Map(saved.extra ?? []);
+    copy = saved.copy; base = saved.base ?? saved.copy; outbox = saved.outbox ?? []; batch = saved.batch ?? null; kitchenOutbox=saved.kitchenOutbox??[];kitchenBatch=saved.kitchenBatch??null;receiptIds=saved.receiptIds??{}; extra = new Map(saved.extra ?? []);
     if (!saved.base) for (const value of extra.values()) if (value && typeof value === "object" && "items" in value && Array.isArray(value.items)) base = mergeTaskRows(base, value.items);
     if (!saved.base) copy = base;
-    publish({ ready: true, conflict: saved.conflict ?? null }); pendingState();
+    publish({ ready: true, conflict: saved.conflict ?? null,kitchenConflict:saved.kitchenConflict??null }); pendingState();
   }
   return copy;
 }
@@ -90,21 +210,21 @@ export async function clearLocalCopy() {
 export async function prepareLocalSignIn() {
   return exclusive(async () => {
     await restoreLocalCopy();
-    if (outbox.length) return false; // Re-authenticate the SAME owner without erasing unsent work.
+    if (outbox.length || kitchenOutbox.length) return false; // Re-authenticate the SAME owner without erasing unsent work.
     await clearLocalRecord();
     return true;
   });
 }
 async function clearLocalRecord() {
   await restoreLocalCopy();
-  if (outbox.length) throw new Error("Hay cambios sin enviar. Sincronízalos o descártalos expresamente antes de cerrar sesión.");
-  epoch++; copy = null; base = null; batch = null; extra.clear(); dirty = false;
-  publish({ ready: false, newer: false, range: "", message: "", pending: 0, pendingIds: [], conflict: null });
+  if (outbox.length || kitchenOutbox.length) throw new Error("Hay cambios sin enviar. Sincronízalos o descártalos expresamente antes de cerrar sesión.");
+  epoch++; copy = null; base = null; batch = null;kitchenBatch=null;receiptIds={}; extra.clear(); dirty = false;
+  publish({ ready: false, newer: false, range: "", message: "", pending: 0, pendingIds: [], conflict: null,kitchenConflict:null,deletions:[] });
   await record(null);
   window.dispatchEvent(new Event(localEvent));
 }
 export async function signOut(options: Parameters<typeof authSignOut>[0]) {
-  if (outbox.length) { publish({ message: "Hay cambios sin enviar. Pulsa Actualizar antes de cerrar sesión, o usa Descartar cambios locales en Info." }); return; }
+  if (outbox.length || kitchenOutbox.length) { publish({ message: "Hay cambios sin enviar. Pulsa Actualizar antes de cerrar sesión, o usa Descartar cambios locales en Info." }); return; }
   if (!navigator.onLine) { publish({ message: "Conéctate para cerrar también tu sesión en el servidor." }); return; }
   try { await clearLocalCopy(); }
   catch (cause) { publish({ message: cause instanceof Error ? cause.message : "No pudimos cerrar sesión." }); return; }
@@ -115,6 +235,7 @@ export async function signOut(options: Parameters<typeof authSignOut>[0]) {
 
 export async function refreshLocalCopy(remount = true, lockHeld = false): Promise<LocalCopy> {
   if (outbox.length) await synchronizeLocalTasks();
+  if (kitchenOutbox.length) await synchronizeKitchen();
   if (sync) return sync;
   if (!navigator.onLine) throw new Error("Sin conexión. Puedes consultar lo descargado; actualizar necesita internet.");
   if (remount && writes) throw new Error("Espera a que termine el guardado antes de actualizar.");
@@ -122,7 +243,7 @@ export async function refreshLocalCopy(remount = true, lockHeld = false): Promis
   publish({ busy: true, message: "" });
   const download = async () => {
     await restoreLocalCopy();
-    if (outbox.length) throw new Error("Hay cambios pendientes de otra pestaña. Pulsa Actualizar de nuevo para enviarlos.");
+    if (outbox.length || kitchenOutbox.length) throw new Error("Hay cambios pendientes de otra pestaña. Pulsa Actualizar de nuevo para enviarlos.");
     // Local reads never purge. Explicit updates may ask the server for one short
     // retention batch; the production cron is responsible for unattended work.
     if (remount) await fetch("/api/core/retention", { method: "POST" }).catch(() => null);
@@ -157,10 +278,10 @@ export async function checkLocalChanges() {
     const response = await fetch("/api/core/local?check=1", { cache: "no-store" });
     const result = await response.json();
     if (version !== epoch) return;
-    if (response.status === 401 && outbox.length) { publish({ reauth: true, message: "Inicia sesión con la misma cuenta para enviar los cambios. Se conservan en este dispositivo." }); return; }
+    if (response.status === 401 && (outbox.length || kitchenOutbox.length)) { publish({ reauth: true, message: "Inicia sesión con la misma cuenta para enviar los cambios. Se conservan en este dispositivo." }); return; }
     if (response.status === 401) { await clearLocalCopy(); window.location.assign("/login"); return; }
     if (!response.ok) throw new Error("No pudimos comprobar si hay novedades. Puedes seguir con la copia local.");
-    if (result.ownerId !== copy?.ownerId && outbox.length) { publish({ accountBlocked: true, message: "La sesión pertenece a otra cuenta. Entra con la cuenta original para conservar y enviar tus cambios." }); return; }
+    if (result.ownerId !== copy?.ownerId && (outbox.length || kitchenOutbox.length)) { publish({ accountBlocked: true, message: "La sesión pertenece a otra cuenta. Entra con la cuenta original para conservar y enviar tus cambios." }); return; }
     if (result.ownerId !== copy?.ownerId) { await clearLocalCopy(); await refreshLocalCopy(); return; }
     publish({ accountBlocked: false, reauth: false, newer: result.dataRevision !== copy?.dataRevision || dirty });
   } catch (cause) { publish({ message: cause instanceof Error ? cause.message : "No pudimos comprobar novedades." }); }
@@ -171,6 +292,7 @@ async function enqueueTask(raw: unknown): Promise<Response> {
     await restoreLocalCopy(); // A different tab may have appended or acknowledged changes.
     if (!copy || !base) throw new Error("Primero descarga tu copia.");
     if (state.accountBlocked) throw new Error("Entra con la cuenta original antes de modificar esta copia.");
+    if (state.kitchenConflict) throw new Error("Primero resuelve los cambios de Cocina para continuar con esta copia.");
     if (dirty) throw new Error("Primero actualiza la copia para recuperar el último cambio confirmado.");
     if (state.busy || sync || writes) throw new Error("Espera a que termine la operación actual.");
     const command = parseCommand(raw);
@@ -220,7 +342,7 @@ export async function synchronizeLocalTasks() {
         if (!response.ok) {
           if (response.status === 401) publish({ reauth: true });
           if (result.error === "ACCOUNT_CHANGED") publish({ accountBlocked: true });
-          if (response.status === 409 && result.error === "LOCAL_CONFLICT") await commitTasks(base, outbox, null, { rootId: result.rootId, item: result.item, missingCalendarId: result.missingCalendarId });
+          if (response.status === 409 && result.error === "LOCAL_CONFLICT") await commitTasks(base, outbox, null, { rootId: result.rootId, item: result.item, missingCalendarId: result.missingCalendarId, deleting:outbox.some(op=>op.rootId===result.rootId&&op.command.action==="deleteTask"&&op.command.id===result.rootId) });
           else if (response.status === 400) await commitTasks(base, outbox, null); // Definitively rejected before a commit; safe to discard later.
           throw new Error(result.message ?? "No pudimos confirmar el envío. Reintenta Actualizar.");
         }
@@ -253,8 +375,8 @@ export async function discardLocalTasks() {
   if (!window.confirm("¿Descartar todos los cambios sin enviar de este dispositivo? Esta acción no se puede deshacer.")) return;
   await exclusive(async () => {
     await restoreLocalCopy();
-    if (batch) throw new Error("Hay un envío sin confirmar. Reintenta Actualizar antes de descartar, para saber qué recibió el servidor.");
-    if (base) await commitTasks(base, [], null, null);
+    if (batch || kitchenBatch) throw new Error("Hay un envío sin confirmar. Reintenta Actualizar antes de descartar, para saber qué recibió el servidor.");
+    if (base) {kitchenOutbox=[];kitchenBatch=null;receiptIds={};publish({kitchenConflict:null});await commitTasks(base, [], null, null);}
   });
 }
 
@@ -265,13 +387,15 @@ export async function resolveLocalConflict(choice: "mine" | "server", replacemen
     const conflict = state.conflict;
     if (!base || !copy || !conflict) return;
     const desired = taskRows(copy).get(conflict.rootId);
+    const deleting=outbox.some(op=>op.rootId===conflict.rootId&&op.command.action==="deleteTask"&&op.command.id===conflict.rootId);
     const schedulingIds = new Set(outbox.filter(op => op.rootId === conflict.rootId && (op.command.action === "scheduleTask" || op.command.action === "unscheduleTask" || "schedule" in op.command && op.command.schedule !== undefined)).map(op => op.command.id));
-    if (choice === "mine" && conflict.missingCalendarId && (!replacementCalendarId || replacementCalendarId === conflict.missingCalendarId || !base.calendars.some(c=>c.id===replacementCalendarId))) throw new Error("Elige otro calendario descargado para conservar tu horario.");
+    if (choice === "mine" && !deleting && conflict.missingCalendarId && (!replacementCalendarId || replacementCalendarId === conflict.missingCalendarId || !base.calendars.some(c=>c.id===replacementCalendarId))) throw new Error("Elige otro calendario descargado para conservar tu horario.");
     const old = taskRows(base).get(conflict.rootId);
     const nextBase = mergeTaskRows(base, conflict.item ? [conflict.item] : [], conflict.item ? [] : [conflict.rootId, ...(old?.children.map(c => c.id) ?? [])]);
     // Other roots may still reference this stale calendar in their queued commands.
     // Keep it in the base until download; resolve each affected root explicitly.
     let remaining = outbox.filter(op => op.rootId !== conflict.rootId);
+    if(choice==="mine"&&deleting&&conflict.item) remaining.push({rootId:conflict.rootId,at:new Date().toISOString(),command:{action:"deleteTask",id:conflict.rootId,expectedRevision:conflict.item.revision,commandId:crypto.randomUUID()}});
     if (choice === "mine" && desired) {
       const server = conflict.item, rootId = server?.id ?? crypto.randomUUID(), now = new Date().toISOString();
       const additions: LocalOperation[] = [];
@@ -297,7 +421,7 @@ export async function resolveLocalConflict(choice: "mine" | "server", replacemen
       remaining = [...remaining, ...additions];
     }
     await commitTasks(nextBase, remaining, null, null);
-    publish({ newer: true, message: choice === "server" ? "Usamos la versión del servidor para esta tarea." : conflict.item ? "Conservamos tus cambios. Pulsa Actualizar para enviarlos." : "Recuperamos tu tarea en Inbox. Pulsa Actualizar para guardarla en el servidor." });
+    publish({ newer: true, message: choice === "server" ? "Usamos la versión del servidor para esta tarea." : deleting ? "Conservamos el borrado. Pulsa Actualizar para confirmarlo." : conflict.item ? "Conservamos tus cambios. Pulsa Actualizar para enviarlos." : "Recuperamos tu tarea en Inbox. Pulsa Actualizar para guardarla en el servidor." });
   });
 }
 
@@ -310,7 +434,7 @@ export function plannerCopy(start: string, days: number) {
 }
 function cached(params: URLSearchParams): unknown | undefined {
   if (!copy) return undefined;
-  const exact = extra.get(key(params));
+  const exact = ["pantry","recipes","shopping"].includes(params.get("view")??"") ? undefined : extra.get(key(params));
   if (exact && params.get("view") !== "agenda" && typeof exact === "object" && "items" in exact && Array.isArray(exact.items)) {
     const rows = taskRows(copy);
     return { ...exact, dataRevision: copy.dataRevision, items: (exact.items as ActivityView[]).filter(item => rows.has(item.id)).map(item => rows.get(item.id)!).filter(item => !outbox.some(op => op.command.action === "deleteTask" && op.command.id === item.id)) };
@@ -364,18 +488,23 @@ export async function coreFetch(input: string, init?: RequestInit): Promise<Resp
   if (url.pathname === "/api/core" && typeof init?.body === "string") {
     try {
       const raw = JSON.parse(init.body);
+      const target=raw.id?taskRows(copy).get(raw.id):undefined;
+      if(localKitchenActions.includes(raw?.action)||raw?.action==="setCompleted"&&(target?.kind==="meal"||target?.mealRole)){
+        const ingredient=copy.pantry.ingredients.find(i=>i.id===raw.id);
+        if((raw.action!=="setIngredientTracking"||raw.mode===ingredient?.trackingMode)&&supportsKitchenLocally(copy,raw))return await enqueueKitchen(raw);
+      }
       const command = ["createTask", "saveTask", "editTask", "addSubtasks", "setCompleted", "deleteTask", "scheduleTask", "unscheduleTask"].includes(raw?.action) ? parseCommand(raw) : null;
       if (command && localTaskCommand(command)) {
         const row = taskRows(copy).get(command.action === "createTask" ? command.parentId ?? command.id : command.id);
-        if ((command.action === "createTask" && !command.parentId || row?.kind === "task" && !row.mealRole) && (command.action !== "deleteTask" || row?.parentId)) return await enqueueTask(command);
+        if ((command.action === "createTask" && !command.parentId || row?.kind === "task" && !row.mealRole) ) return await enqueueTask(command);
       }
     } catch (cause) { return Response.json({ message: cause instanceof Error ? cause.message : "No pudimos guardar en el dispositivo." }, { status: 400 }); }
   }
-  if (outbox.length) return Response.json({ message: "Esta acción necesita conexión directa. Primero pulsa Actualizar para enviar los cambios pendientes." }, { status: 409 });
+  if (outbox.length || kitchenOutbox.length) return Response.json({ message: "Esta acción necesita conexión directa. Primero pulsa Actualizar para enviar los cambios pendientes." }, { status: 409 });
   if (!navigator.onLine) return Response.json({ message: "Esta acción necesita conexión. Puedes anotar, editar y completar tareas normales sin internet." }, { status: 400 });
   return exclusive(async () => {
   await restoreLocalCopy();
-  if (!copy || outbox.length) return Response.json({ message: "Hay cambios pendientes en otra pestaña. Sincroniza antes de continuar." }, { status: 409 });
+  if (!copy || outbox.length || kitchenOutbox.length) return Response.json({ message: "Hay cambios pendientes en otra pestaña. Sincroniza antes de continuar." }, { status: 409 });
   writes++;
   try {
     const headers = new Headers(init?.headers); headers.set("X-MiAgenda-Owner", copy.ownerId);
@@ -413,7 +542,7 @@ export async function downloadRequestedDates() {
   return exclusive(async () => {
   await restoreLocalCopy();
   if (!copy || !state.range || !navigator.onLine || writes) return;
-  if (outbox.length) { publish({ message: "Sincroniza los cambios pendientes antes de descargar otras fechas." }); return; }
+  if (outbox.length || kitchenOutbox.length) { publish({ message: "Sincroniza los cambios pendientes antes de descargar otras fechas." }); return; }
   const query = state.range, ownerId = copy.ownerId, version = epoch;
   publish({ busy: true });
   try {
@@ -428,7 +557,7 @@ export async function downloadRequestedDates() {
       if (updated.size === 1) throw new Error("Estas fechas ocupan demasiado espacio. Descarga un intervalo menor.");
       updated.delete(updated.keys().next().value!);
     }
-    if (outbox.length) throw new Error("Sincroniza los cambios pendientes antes de descargar otras fechas.");
+    if (outbox.length || kitchenOutbox.length) throw new Error("Sincroniza los cambios pendientes antes de descargar otras fechas.");
     const nextBase = Array.isArray(result.items) ? mergeTaskRows(base ?? copy, result.items) : base ?? copy;
     await record({ copy: nextBase, base: nextBase, extra: [...updated] }); extra = updated; base = nextBase; copy = nextBase;
     publish({ range: "", message: "Fechas descargadas." });

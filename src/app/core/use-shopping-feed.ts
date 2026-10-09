@@ -1,11 +1,12 @@
 "use client";
-import { coreFetch, localMode, refreshLocalCopy } from "./local-data";
+import { coreFetch, localMode, refreshLocalCopy, useLocalStatus } from "./local-data";
 import { useEffect, useRef, useState } from "react";
 import type { ShoppingSnapshot } from "../../../reconstruction/core/src/shopping";
 export type ShoppingDraft = Record<string, unknown> & { action: string };
 type Attempt = { command: ShoppingDraft & { commandId: string }; success?: () => void };
 
 export function useShoppingFeed(initial: ShoppingSnapshot) {
+  const localStatus=useLocalStatus();
   const [data, setData] = useState(initial), [busy, setBusy] = useState(false), [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null), [retry, setRetry] = useState(false);
   const writing = useRef(false), attempt = useRef<Attempt | null>(null), controller = useRef<AbortController | null>(null);
@@ -49,9 +50,10 @@ export function useShoppingFeed(initial: ShoppingSnapshot) {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const refresh = () => { if (localMode()) return; if (document.visibilityState === "visible") { clearTimeout(timer); timer = setTimeout(() => void load(), 150); } };
+    const localRefresh=()=>{void load();}; window.addEventListener("miagenda:local-range",localRefresh);
     window.addEventListener("focus", refresh); window.addEventListener("online", refresh); document.addEventListener("visibilitychange", refresh);
-    return () => { clearTimeout(timer); controller.current?.abort(); window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); };
+    return () => { window.removeEventListener("miagenda:local-range",localRefresh); clearTimeout(timer); controller.current?.abort(); window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return { data, busy, reading, error, retry, locked: busy || reading || retry, load, mutate, reattempt: () => { if (attempt.current) void send(attempt.current); } };
+  return { data, busy, reading, error, retry, locked: localStatus.busy || busy || reading || retry, load, mutate, reattempt: () => { if (attempt.current) void send(attempt.current); } };
 }

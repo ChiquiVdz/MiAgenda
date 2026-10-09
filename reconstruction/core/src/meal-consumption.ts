@@ -11,7 +11,7 @@ type Tx=Prisma.TransactionClient;
 const ZERO=BigInt(0);
 const include={activity:true,recipes:{orderBy:{position:"asc" as const},include:{recipeRevision:{include:{steps:true}},steps:{where:{role:"preparation" as const,activity:{is:{lifecycle:"active" as const}}},include:{activity:true}}}}} satisfies Prisma.MealBlockInclude;
 /** Real operations use actual available stock, never provisional reservations. */
-export async function completeMeal(tx:Tx,userId:string,blockId:string,commandId:string,optionalIds?:string[]){
+export async function completeMeal(tx:Tx,userId:string,blockId:string,commandId:string,optionalIds?:string[],actionTime?:Date){
   const meal=await tx.mealBlock.findFirstOrThrow({where:{activityId:blockId,userId},include});
   if(meal.activity.completedAt)return;
   const steps=meal.recipes.flatMap(r=>r.steps),optional=steps.filter(s=>s.optional);
@@ -36,7 +36,7 @@ export async function completeMeal(tx:Tx,userId:string,blockId:string,commandId:
   const amounts=[...totals].map(([ingredientId,row])=>({ingredientId,...row,quantity:row.quantity.toDecimalPlaces(3,Prisma.Decimal.ROUND_CEIL)})).filter(r=>r.quantity.gt(0));
   const balances=await tx.pantryBalance.findMany({where:{userId,ingredientId:{in:amounts.map(r=>r.ingredientId)}}});
   for(const row of amounts){const stock=balances.find(b=>b.ingredientId===row.ingredientId)?.quantity??new Prisma.Decimal(0);if(row.quantity.gt(stock))throw new CoreError("DEPENDENCY",`Falta ${row.quantity.sub(stock).toString()} ${row.unit==="piece"?"piezas":row.unit} de ${row.name}. Ajusta Alacena o la comida antes de completar.`);}
-  const now=new Date(),completionId=randomUUID();
+  const now=actionTime??new Date(),completionId=randomUUID();
   const operation=await tx.inventoryOperation.create({data:{id:randomUUID(),userId,kind:"mealCompletion",commandId,sourceKey:completionId,sourceActivityId:blockId,sourceRevision:meal.activity.revision}});
   const completion=await tx.mealCompletion.create({data:{id:completionId,userId,blockId,operationId:operation.id,optionalSteps:[...selected],createdAt:now}});
   if(amounts.length)await tx.inventoryMovement.createMany({data:amounts.map(row=>({id:randomUUID(),userId,operationId:operation.id,ingredientId:row.ingredientId,delta:row.quantity.neg().toString(),unit:row.unit}))});
@@ -59,7 +59,7 @@ export async function completeMeal(tx:Tx,userId:string,blockId:string,commandId:
   if(usedIds.length)await tx.activity.updateMany({where:{userId,id:{in:usedIds},completedAt:null},data:{completedAt:now}});
   await tx.activity.update({where:{id:blockId},data:{completedAt:now}});
 }
-export async function undoMeal(tx:Tx,userId:string,blockId:string,commandId:string){
+export async function undoMeal(tx:Tx,userId:string,blockId:string,commandId:string,actionTime?:Date){
   const completion=await tx.mealCompletion.findFirst({where:{userId,blockId,reversedAt:null},include:{operation:{include:{movements:true}},batches:true},orderBy:{createdAt:"desc"}});
   if(!completion)return;
   const dependents=await tx.portionUse.findMany({where:{userId,batchId:{in:completion.batches.map(b=>b.id)},reversedAt:null,completionId:{not:completion.id}},include:{completion:{include:{block:{include:{activity:{include:{schedule:true}}}}}}}});
@@ -71,7 +71,7 @@ export async function undoMeal(tx:Tx,userId:string,blockId:string,commandId:stri
   for (const movement of completion.operation.movements) { const id = await reversalIngredient(tx, userId, movement.ingredientId); returned.set(id, (returned.get(id) ?? new Prisma.Decimal(0)).sub(movement.delta)); }
   const destinationBalances = await tx.pantryBalance.findMany({ where: { userId, ingredientId: { in: [...returned.keys()] } } });
   for (const [id, amount] of returned) if (amount.add(destinationBalances.find(b => b.ingredientId === id)?.quantity ?? 0).gt("999999999.999")) throw new CoreError("DEPENDENCY", "Alacena excedería la cantidad máxima al devolver ingredientes al sustituto.");
-  const now=new Date();
+  const now=actionTime??new Date();
   const operation=await tx.inventoryOperation.create({data:{id:randomUUID(),userId,kind:"reversal",commandId,sourceKey:completion.id,sourceActivityId:blockId,sourceRevision:completion.operation.sourceRevision,reversalOfId:completion.operationId}});
   if(completion.operation.movements.length)await tx.inventoryMovement.createMany({data:completion.operation.movements.map(m=>({id:randomUUID(),userId,operationId:operation.id,ingredientId:m.ingredientId,unit:m.unit,delta:m.delta.neg().toString()}))});
   for (const movement of completion.operation.movements) await returnHistoricalStock(tx, userId, commandId, movement.ingredientId, movement.delta.neg());
@@ -83,11 +83,11 @@ export async function undoMeal(tx:Tx,userId:string,blockId:string,commandId:stri
   await tx.activity.updateMany({where:{userId,id:{in:resetIds},lifecycle:"active",completedAt:{not:null}},data:{completedAt:null}});
   await tx.activity.update({where:{id:blockId},data:{completedAt:null}});
 }
-export async function setMealStep(tx:Tx,userId:string,activityId:string,completed:boolean,commandId:string){
+export async function setMealStep(tx:Tx,userId:string,activityId:string,completed:boolean,commandId:string,actionTime?:Date){
   const step=await tx.mealStepData.findFirstOrThrow({where:{activityId,userId,role:"preparation"},include:{mealRecipe:{include:{recipeRevision:{include:{steps:{orderBy:{position:"asc"}}}},block:{include:{activity:true}}}}}}),block=step.mealRecipe.block;
   const steps=await tx.mealStepData.findMany({where:{userId,role:"preparation",mealRecipe:{is:{blockId:block.activityId}},activity:{is:{lifecycle:"active"}}},include:{activity:true}});
   const changedIds=steps.map(item=>item.activityId);
-  if(block.activity.completedAt){if(completed)return changedIds;if(recipePriorGroups(step.mealRecipe.recipeRevision.steps).some(group=>group.steps.some(item=>item.stepKey===step.sourceStepKey)))throw new CoreError("DEPENDENCY","Deshaz primero la comida para corregir una preparación previa.");if(step.optional)throw new CoreError("DEPENDENCY","Deshaz primero la comida para corregir los opcionales consumidos.");await undoMeal(tx,userId,block.activityId,commandId);return changedIds;}
+  if(block.activity.completedAt){if(completed)return changedIds;if(recipePriorGroups(step.mealRecipe.recipeRevision.steps).some(group=>group.steps.some(item=>item.stepKey===step.sourceStepKey)))throw new CoreError("DEPENDENCY","Deshaz primero la comida para corregir una preparación previa.");if(step.optional)throw new CoreError("DEPENDENCY","Deshaz primero la comida para corregir los opcionales consumidos.");await undoMeal(tx,userId,block.activityId,commandId,actionTime);return changedIds;}
   const source=step.mealRecipe.recipeRevision.steps;
   const groups=recipePriorGroups(source);
   const group=groups.find(item=>item.steps.some(sourceStep=>sourceStep.stepKey===step.sourceStepKey));
@@ -101,7 +101,7 @@ export async function setMealStep(tx:Tx,userId:string,activityId:string,complete
     if(pendingBefore)throw new CoreError("DEPENDENCY",`Completa primero el tramo anterior: falta «${pendingBefore.activity.title}».`);
     const keys=new Set(group.steps.map(item=>item.stepKey));
     const ids=dishSteps.filter(item=>keys.has(item.sourceStepKey)&&(!item.optional||item.activityId===activityId)).map(item=>item.activityId);
-    await tx.activity.updateMany({where:{userId,id:{in:ids},completedAt:null},data:{completedAt:new Date()}});
+    await tx.activity.updateMany({where:{userId,id:{in:ids},completedAt:null},data:{completedAt:actionTime??new Date()}});
     return changedIds; // A prior group never completes the meal or consumes stock.
   }
   if(group && !completed){
@@ -112,10 +112,10 @@ export async function setMealStep(tx:Tx,userId:string,activityId:string,complete
     await tx.activity.updateMany({where:{userId,id:{in:dishSteps.filter(item=>keys.has(item.sourceStepKey)).map(item=>item.activityId)},completedAt:{not:null}},data:{completedAt:null}});
     return changedIds;
   }
-  await tx.activity.update({where:{id:activityId},data:{completedAt:completed?new Date():null}});
+  await tx.activity.update({where:{id:activityId},data:{completedAt:completed?(actionTime??new Date()):null}});
   if(group)return changedIds;
-  const refreshed=steps.map(item=>item.activityId===activityId?{...item,activity:{...item.activity,completedAt:completed?new Date():null}}:item);
+  const refreshed=steps.map(item=>item.activityId===activityId?{...item,activity:{...item.activity,completedAt:completed?(actionTime??new Date()):null}}:item);
   const required=refreshed.filter(s=>!s.optional);
-  if(required.length&&required.every(s=>s.activity.completedAt))await completeMeal(tx,userId,block.activityId,commandId,refreshed.filter(s=>s.optional&&s.activity.completedAt).map(s=>s.activityId));
+  if(required.length&&required.every(s=>s.activity.completedAt))await completeMeal(tx,userId,block.activityId,commandId,refreshed.filter(s=>s.optional&&s.activity.completedAt).map(s=>s.activityId),actionTime);
   return changedIds;
 }

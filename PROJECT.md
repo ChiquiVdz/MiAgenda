@@ -274,3 +274,13 @@ Confirmadas por el usuario: usar último día del mes si no existe la fecha recu
 También aprobadas: deshacer principal normal desmarca hijos; agregar hijo pendiente reabre principal; preparaciones previas no completan automáticamente comida; política de calendario de hijos. Al eliminar un calendario ocupado se puede trasladar o borrar contenido, respetando reglas de módulos y consumos.
 
 El siguiente bloque diseña el esquema físico y las migraciones sobre una base aislada. La aprobación documental no significa que la nueva base ya exista ni ordena borrar la actual o implementar todos los bloques de una vez.
+
+
+### 19.7 Operaciones locales aprobadas el 2026-10-08
+
+- Guardar tareas normales, sus horarios individuales y borrado de principales/hijos en el dispositivo, incluso conectado; enviar solo mediante Actualizar. Deshacer borrado antes de enviar; recurrencia offline solo esa instancia.
+- Alacena/recetas y compras/completar/deshacer comidas descargadas pueden operar localmente con cantidades, disponibilidad, consumos, sobras y reversión coherentes. Preparaciones previas no consumen; preguntar opcionales al completar el bloque. No inventar stock o porciones reales.
+- Preservar colas y payloads ante errores, cuenta cambiada o resultado incierto. Sincronizar en orden con revisión, propietario e idempotencia; detener ante dependencias o stock insuficiente.
+- Correcciones manuales de existencias y recetas no sobrescriben cambios remotos sin decisión explícita. Ingredientes equivalentes detectados al enviar requieren elegir el existente; no fusionar por nombre automáticamente.
+- Mantener conectados cambios de serie, planes/horarios de comidas y operaciones delicadas del catálogo (retirar/fusionar/cambiar seguimiento). La copia y sus límites no equivalen a respaldo ni a un motor independiente de autoridad.
+- Alcance y revisión operativa vigentes: `docs/CAMBIOS_LOCALES.md`.

@@ -1,10 +1,11 @@
 "use client";
-import { coreFetch, localMode, refreshLocalCopy } from "./local-data";
+import { coreFetch, localMode, refreshLocalCopy, useLocalStatus } from "./local-data";
 import { useEffect, useRef, useState } from "react";
 import type { RecipeSnapshot, RecipeView } from "../../../reconstruction/core/src/recipes";
 type Draft = { action: string; id: string; expectedRevision?: number; recipe?: unknown };
 type Attempt = { command: Draft & { commandId: string }; success?: () => void };
 export function useRecipeFeed(initial: RecipeSnapshot) {
+  const localStatus=useLocalStatus();
   const [data, setData] = useState(initial), [busy, setBusy] = useState(false), [reading, setReading] = useState(false), [retry, setRetry] = useState(false), [error, setError] = useState<string | null>(null);
   const attempt = useRef<Attempt | null>(null), writing = useRef(false), controller = useRef<AbortController | null>(null), generation = useRef(0), revision = useRef(initial.dataRevision), pending = useRef(false);
   async function load(afterId?: string) {
@@ -40,11 +41,12 @@ export function useRecipeFeed(initial: RecipeSnapshot) {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const refresh = () => { if (localMode()) return; if (document.visibilityState === "visible") { clearTimeout(timer); timer = setTimeout(() => void load(), 150); } };
+    const localRefresh=()=>{void load();}; window.addEventListener("miagenda:local-range",localRefresh);
     window.addEventListener("focus", refresh); window.addEventListener("online", refresh); document.addEventListener("visibilitychange", refresh);
-    return () => { clearTimeout(timer); controller.current?.abort(); window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); };
+    return () => { window.removeEventListener("miagenda:local-range",localRefresh); clearTimeout(timer); controller.current?.abort(); window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh); document.removeEventListener("visibilitychange", refresh); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return { data, busy, reading, retry, error, locked: busy || retry, load,
+  return { data, busy, reading, retry, error, locked: localStatus.busy || busy || retry, load,
     mutate: async (command: Draft, success?: () => void) => { if (!writing.current && !attempt.current) await send({ command: { ...command, commandId: crypto.randomUUID() }, success }); },
     reattempt: () => { if (attempt.current) void send(attempt.current); } };
 }
