@@ -88,7 +88,7 @@ export function useWeekDrag(scroll: RefObject<HTMLDivElement | null>, weekStart:
     if (!current || current.pointerId !== event.pointerId) return;
     const viewport = scroll.current?.getBoundingClientRect();
     const columns = scroll.current?.querySelectorAll<HTMLElement>(".core-day-column");
-    const first = columns?.[0]?.getBoundingClientRect(), last = columns?.[6]?.getBoundingClientRect();
+    const first = columns?.[0]?.getBoundingClientRect(), last = columns?.[columns.length - 1]?.getBoundingClientRect();
     const inside = viewport && first && last && event.clientY >= viewport.top + 76 && event.clientY <= viewport.bottom && event.clientX >= first.left && event.clientX <= last.right;
     const changed = inside && current.active && current.preview && (current.preview.schedule.startsAt !== current.item.schedule!.startsAt || current.preview.schedule.endsAt !== current.item.schedule!.endsAt);
     cancel();
