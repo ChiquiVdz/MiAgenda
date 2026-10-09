@@ -1,9 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { localMode, useLocalStatus } from "./local-data";
 
 export type CreateCalendarInline = (name: string, color: string, selected: (id: string) => void) => void;
 export function CalendarPicker({ calendars, value, change, disabled, create, onAddingChange }: { calendars: { id: string; name: string }[]; value: string; change: (id: string) => void; disabled: boolean; create?: CreateCalendarInline; onAddingChange?: (adding: boolean) => void }) {
+  const local = useLocalStatus();
+  if (localMode() && (!local.online || local.pending)) create = undefined;
   const [adding, setAdding] = useState(false), [name, setName] = useState(""), [color, setColor] = useState("#527860");
+  useEffect(() => { if (!create) setAdding(false); }, [create]);
   useEffect(() => { onAddingChange?.(adding); return () => onAddingChange?.(false); }, [adding, onAddingChange]);
   function add() { if (!disabled && name.trim()) create?.(name.trim(), color, id => { change(id); setAdding(false); setName(""); }); }
   return <div className="core-calendar-picker"><label className="form-field">Calendario<select required value={adding ? "new-calendar" : value} disabled={disabled} onChange={event => {

@@ -1,4 +1,6 @@
-# Copia local — bloque 1
+# Copia local — consulta y evolución
+
+**Actualización:** los bloques de altas de Inbox y edición/completado de tareas normales con envío manual están implementados en el código. Consultar [Cambios locales](CAMBIOS_LOCALES.md) para reglas vigentes, límites y revisión. Las secciones siguientes describen el bloque original de consulta; sus restricciones de solo lectura y cola futura quedan sustituidas por esa actualización.
 
 8 de octubre de 2026. Decisiones aprobadas en la conversación y reflejadas en PROJECT.md.
 

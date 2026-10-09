@@ -1,6 +1,6 @@
 "use client";
-import { coreFetch, localMode, refreshLocalCopy } from "./local-data";
-import { useContext, useEffect, useState } from "react";
+import { coreFetch, localMode, refreshLocalCopy, useLocalStatus } from "./local-data";
+import { useContext, useEffect, useRef, useState } from "react";
 import type { ActivityView } from "../../../reconstruction/core/src/views";
 import { parseSchedule, type ScheduleInput, type SeriesScope } from "../../../reconstruction/core/src/contracts";
 import { parseRecurrence, type RecurrenceRule } from "../../../reconstruction/core/src/recurrence";
@@ -13,6 +13,9 @@ import type { Draft, Mutate } from "./use-core-feed";
 type Info = { rule: RecurrenceRule; originalDate: string; anchorDate: string; seriesRevision: number; dataRevision: string };
 type Summary = { added: number; removed: number; preserved: number; effectiveDate: string };
 export function TaskEditor({ item: liveItem, calendars, disabled, mutate, close, scopeControls, applyCompleted }: { item: ActivityView; calendars: CalendarView[]; disabled: boolean; mutate: Mutate; close: () => void; scopeControls: boolean; applyCompleted: () => void }) {
+  const local = useLocalStatus();
+  const access = useRef(local); access.current = local;
+  const [requestRecurrence, setRequestRecurrence] = useState(false);
   // Keep all fields paired with the revision opened by the user.
   const [item] = useState(liveItem);
   const feedback = useContext(CoreFeedback);
@@ -28,7 +31,7 @@ export function TaskEditor({ item: liveItem, calendars, disabled, mutate, close,
   const [preview, setPreview] = useState<{ summary: Summary; command: Draft } | null>(null);
   const recurrence = item.recurrence;
   useEffect(() => {
-    if (!recurrence || item.parentId) return;
+    if (!recurrence || item.parentId || localMode() && (!requestRecurrence || !access.current.online || access.current.pending > 0)) return;
     const controller = new AbortController(); setReading(true);
     const query = new URLSearchParams({ view: "recurrence", seriesId: recurrence.seriesId, ordinal: String(recurrence.ordinal) });
     void coreFetch(`/api/core?${query}`, { cache: "no-store", signal: controller.signal }).then(async response => {
@@ -36,7 +39,7 @@ export function TaskEditor({ item: liveItem, calendars, disabled, mutate, close,
       if (!controller.signal.aborted) { setInfo(value); setRule(value.rule); setPreview(null); setError(null); }
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "No pudimos leer la repetición."); }).finally(() => { if (!controller.signal.aborted) setReading(false); });
     return () => controller.abort();
-  }, [recurrence, item.parentId, refresh]);
+  }, [recurrence, item.parentId, refresh, requestRecurrence]);
   function changeStart(date: string, time: string) {
     try {
       const duration = Math.max(900000, Date.parse(atTime(endDate, endTime, zone)) - Date.parse(atTime(startDate, startTime, zone)));
@@ -85,6 +88,7 @@ export function TaskEditor({ item: liveItem, calendars, disabled, mutate, close,
       <div className="core-date-fields"><label className="form-field">Inicio<input type="date" required disabled={locked} value={startDate} onChange={event => changeStart(event.target.value, startTime)} /></label>{!allDay && <TimePicker label="Hora de inicio" disabled={locked} value={startTime} onChange={time => { setPreview(null); changeStart(startDate, time); }} />}
         <label className="form-field">{allDay ? "Último día" : "Fin"}<input type="date" required min={startDate} disabled={locked} value={endDate} onChange={event => setEndDate(event.target.value)} /></label>{!allDay && <TimePicker label="Hora de fin" disabled={locked} value={endTime} onChange={time => { setPreview(null); setEndTime(time); }} />}</div>
     </>}
+    {!item.parentId && recurrence && !info && <button type="button" className="core-text-button" disabled={locked || !local.online || local.pending > 0} onClick={() => setRequestRecurrence(true)}>Cargar repetición (requiere conexión)</button>}
     {!item.parentId && recurrence && info && <RecurrenceFields value={rule} change={value => { setRule(value); setPreview(null); if (scope === "this") setScope("following"); }} startDate={scope === "all" ? info.anchorDate : info.originalDate} disabled={locked || !scopeControls || !scheduled} allowNone={false} />}
     {recurrence && (scopeControls || !!item.parentId) && <label className="form-field">Aplicar cambios a<select disabled={locked} value={scope} onChange={event => setScope(event.target.value as SeriesScope)}><option value="this">Solo esta</option><option value="following">Esta y las siguientes</option><option value="all">Toda la serie</option></select></label>}
     {recurrence && item.parentId && scope!=="this" && <p className="core-muted">El horario se aplica relativo al día de cada principal. Las completadas conservan su horario; los pasos eliminados se omiten. Quitar horario conserva sus casillas.</p>}

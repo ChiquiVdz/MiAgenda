@@ -61,7 +61,7 @@ export function QuickCapture() {
       if (!Array.isArray(result?.activities) || !Array.isArray(result?.removedIds) || typeof result?.dataRevision !== "string") {
         throw new Error("No pudimos confirmar el guardado. Reintenta; no se duplicará el pendiente.");
       }
-      attempt.current = null; setRetry(false); setText(""); setOpen(false); setNotice("Guardado en Inbox.");
+      attempt.current = null; setRetry(false); setText(""); setOpen(false); setNotice(localMode() ? "Guardado en este dispositivo · Sin enviar" : "Guardado en Inbox.");
       window.dispatchEvent(new CustomEvent<CommandResult>(inboxCapturedEvent, { detail: result }));
       trigger.current?.focus();
     } catch (cause) {
@@ -76,7 +76,7 @@ export function QuickCapture() {
   return <>
     <div className="quick-capture-controls">
       {notice && <p className="quick-capture-notice" role="status">{notice}</p>}
-      <button ref={trigger} type="button" className="quick-capture-trigger" aria-label="Captura rápida: agregar a Inbox" disabled={!local.ready || !local.online || local.busy} onClick={() => { setNotice(null); setOpen(true); }}>
+      <button ref={trigger} type="button" className="quick-capture-trigger" aria-label="Captura rápida: agregar a Inbox" disabled={!local.ready || local.busy} onClick={() => { setNotice(null); setOpen(true); }}>
         <span aria-hidden="true">＋</span><span>Anotar</span>
       </button>
     </div>

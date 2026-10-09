@@ -1,5 +1,5 @@
 "use client";
-import { coreFetch, localMode, refreshLocalCopy } from "./local-data";
+import { coreFetch, localMode, refreshLocalCopy, useLocalStatus } from "./local-data";
 
 import { useEffect, useRef, useState } from "react";
 import type { CoreCommand } from "../../../reconstruction/core/src/contracts";
@@ -12,6 +12,7 @@ type Attempt = { command: CoreCommand; success?: () => void };
 
 /** One in-flight write, stable retries, and range reads fenced against stale responses. */
 export function useCoreFeed(initial: Feed, query: string, accepts: (item: ActivityView) => boolean, afterWrite?: (action?: string, result?: CommandResult) => void) {
+  const local = useLocalStatus();
   const [data, setData] = useState(initial), [busy, setBusy] = useState(false), [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null), [retry, setRetry] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -88,7 +89,7 @@ export function useCoreFeed(initial: Feed, query: string, accepts: (item: Activi
         });
       }
       if (["setCalendarVisible", "deleteCalendar", "createRecurringTask", "saveTask", "addSubtasks"].includes(value.command.action) || (value.command.scope && value.command.scope !== "this")) pendingRead.current = true;
-      latest.current.afterWrite?.(value.command.action, saved.replayed ? undefined : saved); value.success?.(); setNotice("Cambio guardado.");
+      latest.current.afterWrite?.(value.command.action, saved.replayed ? undefined : saved); value.success?.(); setNotice(result.localPending ? "Guardado en este dispositivo · Sin enviar" : "Cambio guardado.");
     } catch (cause) { setRetry(Boolean(attempt.current)); setError(cause instanceof Error ? cause.message : "No pudimos guardar."); }
     finally {
       write.current = false; setBusy(false);
@@ -121,6 +122,6 @@ export function useCoreFeed(initial: Feed, query: string, accepts: (item: Activi
     if (previousQuery.current !== query) { previousQuery.current = query; setData(current => ({ ...current, items: [], nextAfterId: null })); void load(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
-  return { data, busy, reading, error, retry, notice, locked: busy || retry, mutate, load,
+  return { data, busy, reading, error, retry, notice, locked: busy || retry || local.busy, mutate, load,
     reattempt: () => { if (attempt.current) void send(attempt.current); } };
 }

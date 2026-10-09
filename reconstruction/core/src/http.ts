@@ -16,7 +16,7 @@ const statuses = { INVALID_INPUT: 400, NOT_FOUND: 404, CONFLICT: 409,
 function response(value: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return Response.json(value, { status, headers: { "Cache-Control": "private, no-store", ...extraHeaders } });
 }
-async function readJson(request: Request): Promise<unknown> {
+export async function readJson(request: Request): Promise<unknown> {
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("content-type") ?? "")) invalid("Usa application/json.");
   if (!request.body) invalid("Falta el contenido del comando.");
   const reader = request.body.getReader(), chunks: Uint8Array[] = [];

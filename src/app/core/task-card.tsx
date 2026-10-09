@@ -10,8 +10,10 @@ import { MealCompletionButton } from "./meal-completion-button";
 import { TaskEditor } from "./task-editor";
 import { PencilIcon, TrashIcon } from "./task-icons";
 import { SubtaskComposer } from "./subtask-composer";
+import { useLocalStatus } from "./local-data";
 
 export function TaskCard({ item, disabled, mutate, calendars, scopeControls = false }: { scopeControls?: boolean; item: ActivityView; disabled: boolean; mutate: Mutate; calendars: CalendarView[] }) {
+  const local = useLocalStatus();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const actions = useSeriesAction(item, scopeControls, disabled, mutate, true);
@@ -22,7 +24,7 @@ export function TaskCard({ item, disabled, mutate, calendars, scopeControls = fa
     <button type="button" className="today-completion" disabled={disabled} aria-pressed={Boolean(item.completedAt)} aria-label={`${item.completedAt ? "Deshacer completado de" : "Completar"} ${item.title}`}
       onClick={() => void mutate({ action: "setCompleted", id: item.id, expectedRevision: item.revision, completed: !item.completedAt })}>{item.completedAt ? "✓" : ""}</button>
     <div className="today-event-content">
-      {editing ? <TaskEditor item={item} calendars={calendars} disabled={disabled} mutate={mutate} close={() => setEditing(false)} scopeControls={scopeControls} applyCompleted={() => void actions.request({ action: "setCompleted", id: item.id, expectedRevision: item.revision, completed: !!item.completedAt })} /> : <div className="inbox-text"><strong>{item.title}</strong>{item.recurrence && <small className="core-muted">↻ Recurrente · Casillas rápidas: solo esta instancia</small>}{item.schedule && <small className="core-schedule-label">{scheduleLabel(item)}</small>}{item.description && <p className="core-description">{item.description}</p>}</div>}
+      {editing ? <TaskEditor item={item} calendars={calendars} disabled={disabled} mutate={mutate} close={() => setEditing(false)} scopeControls={scopeControls} applyCompleted={() => void actions.request({ action: "setCompleted", id: item.id, expectedRevision: item.revision, completed: !!item.completedAt })} /> : <div className="inbox-text"><strong>{item.title} {local.pendingIds.includes(item.id) && <small className="local-pending-badge">Sin enviar</small>}</strong>{item.recurrence && <small className="core-muted">↻ Recurrente · Casillas rápidas: solo esta instancia</small>}{item.schedule && <small className="core-schedule-label">{scheduleLabel(item)}</small>}{item.description && <p className="core-description">{item.description}</p>}</div>}
       {item.schedule && <div className="core-row-actions core-flags"><label><input type="checkbox" disabled={disabled} checked={item.keep} onChange={event => void mutate({ action: "setFlags", id: item.id, expectedRevision: item.revision, keep: event.target.checked })} />Conservar</label><label><input type="checkbox" disabled={disabled} checked={item.highlighted} onChange={event => void mutate({ action: "setFlags", id: item.id, expectedRevision: item.revision, highlighted: event.target.checked })} />Destacar</label></div>}
       {!item.parentId && <>
       {item.children.length > 0 && <details open className="core-subtasks"><summary>Subtareas {done}/{item.children.length}</summary>
@@ -40,6 +42,7 @@ export function TaskCard({ item, disabled, mutate, calendars, scopeControls = fa
 }
 
 function SubtaskRow({ child, disabled, mutate, calendars, parentCalendarId, parentDate, quickMutate, scopeControls, meal }: { meal?: ActivityView; quickMutate: Mutate; scopeControls: boolean; child: ActivityView["children"][number]; disabled: boolean; mutate: Mutate; calendars: CalendarView[]; parentCalendarId?: string; parentDate?: string }) {
+  const local = useLocalStatus();
   const [editing, setEditing] = useState(false), [text, setText] = useState(child.title), [editRevision, setEditRevision] = useState(child.revision);
   const finishingMeal=meal && !meal.completedAt && meal.children.some(step=>step.mealPriorGroup) && !child.completedAt && !child.mealOptional && !child.mealPriorMember && meal.children.filter(step=>step.mealRole==="preparation" && !step.mealOptional && step.id!==child.id).every(step=>!!step.completedAt);
   return <li className={`core-subtask${child.completedAt ? " core-subtask-completed" : ""}`}>
@@ -50,6 +53,7 @@ function SubtaskRow({ child, disabled, mutate, calendars, parentCalendarId, pare
       <button type="submit" className="core-text-button" disabled={disabled || !text.trim() || text.trim() === child.title}>Guardar</button>
       <button type="button" className="core-text-button" disabled={disabled} onClick={() => setEditing(false)}>Cancelar</button>
     </form> : <span className="core-subtask-name">{child.title}{child.mealOptional&&<small>Opcional</small>}{child.schedule && <small>Agendada · {scheduleLabel(child)}</small>}</span>}
+    {local.pendingIds.includes(child.id) && <small className="local-pending-badge">Sin enviar</small>}
     {(child.mealRole !== "preparation" || child.mealPriorGroup) && <ScheduleButton inline iconOnly item={child} calendars={calendars} parentDate={parentDate} parentCalendarId={parentCalendarId} disabled={disabled} mutate={quickMutate} />}
     {!editing && child.mealRole !== "preparation" && <button type="button" className="core-text-button core-icon-button" disabled={disabled} aria-label={`Editar subtarea ${child.title}`} title={`Editar ${child.title}`} onClick={() => { setText(child.title); setEditRevision(child.revision); setEditing(true); }}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5" /></svg></button>}
     <button type="button" className="core-text-button core-icon-button" disabled={disabled || child.mealRole === "preparation"} aria-label={`Eliminar subtarea ${child.title}`} title={`Eliminar ${child.title}`} onClick={() => {

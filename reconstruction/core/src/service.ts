@@ -6,11 +6,17 @@ import { type CommandResult } from "./views.ts";
 import { readActivities } from "./activity-reads.ts";
 import { moveStepCalendar } from "./series-step-schedule.ts";
 import { calendarImpact } from "./calendar-impact.ts";
-import { createSeries, materialize } from "./series-runtime.ts";
+import { createSeries, materialize, virtualAgenda } from "./series-runtime.ts";
 import { applySeriesScope } from "./series-scopes.ts";
 import { changeFrequency, previewFrequency } from "./series-frequency.ts";
 import { moveMeal, retireMeal } from "./planner.ts";
 import { completeMeal, undoMeal, setMealStep } from "./meal-consumption.ts";
+import { parseLocalBatch } from "./local-task-contract.ts";
+import type { ActivityView } from "./views.ts";
+
+export class LocalTaskConflict extends CoreError {
+  constructor(readonly rootId: string, readonly item: ActivityView | null, readonly missingCalendarId?: string) { super("CONFLICT", missingCalendarId ? "El calendario elegido ya no existe. Elige otro calendario o usa la versión del servidor." : "Esta tarea cambió en otro dispositivo. Elige qué versión conservar."); }
+}
 
 type Tx = Prisma.TransactionClient;
 function canonical(value: unknown): string {
@@ -26,6 +32,85 @@ function canonical(value: unknown): string {
 export class ActivityService {
   private readonly db: PrismaClient;
   constructor(db: PrismaClient) { this.db = db; }
+
+  /** One owner lock and one receipt for the immutable queue prefix. No partial batch commits. */
+  async executeLocalBatch(authenticatedUserId: string, raw: unknown): Promise<CommandResult & { replayed: boolean }> {
+    const userId = uuid(authenticatedUserId, "Usuario"), batch = parseLocalBatch(raw);
+    const hash = createHash("sha256").update(canonical(batch)).digest("hex");
+    return this.db.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${userId}::text, 0))`;
+      const owners = await tx.$queryRaw<{ dataRevision: bigint }[]>`SELECT "dataRevision" FROM public.users WHERE id=${userId}::uuid FOR UPDATE`;
+      if (!owners.length) throw new CoreError("UNAUTHENTICATED", "Inicia sesión de nuevo.");
+      const receipt = await tx.commandReceipt.findUnique({ where: { userId_commandId: { userId, commandId: batch.commandId } } });
+      if (receipt) {
+        if (receipt.action !== "syncLocalTasks" || receipt.payloadHash !== hash) throw new CoreError("IDEMPOTENCY_CONFLICT", "El lote ya se usó con otro contenido.");
+        return { ...(receipt.result as unknown as CommandResult), replayed: true };
+      }
+      const conflict = async (id: string, missingCalendarId?: string): Promise<never> => {
+        const items = await readActivities(tx, userId, { where: { id, lifecycle: "active" } });
+        const guard = batch.guards.find(g=>g.id===id);
+        let current: ActivityView | null = items[0] ?? null;
+        if (!current && guard?.occurrence && guard.date) {
+          const ids = await tx.calendar.findMany({where:{userId},select:{id:true}});
+          const end = new Date(Date.parse(guard.date)+86400000).toISOString().slice(0,10);
+          current = (await virtualAgenda(tx,userId,ids.map(c=>c.id),guard.date,end)).find(item=>item.id===id) ?? null;
+        }
+        throw new LocalTaskConflict(id, current, missingCalendarId);
+      };
+      const requested = batch.operations.flatMap(op => "schedule" in op.command && op.command.schedule ? [{rootId:op.rootId,id:op.command.schedule.calendarId}] : []);
+      if (requested.length) {
+        const calendars = await tx.calendar.findMany({where:{userId,id:{in:[...new Set(requested.map(c=>c.id))]}},select:{id:true}});
+        const missing = requested.find(c=>!calendars.some(calendar=>calendar.id===c.id));
+        if (missing) await conflict(missing.rootId,missing.id);
+      }
+      // Validate every aggregate before materializing or changing anything.
+      for (const guard of batch.guards) {
+        const row = await tx.activity.findFirst({ where: { userId, id: guard.id, lifecycle: "active" }, include: { children: { where: { lifecycle: "active" }, select: { id: true, revision: true } }, mealStep: true } });
+        if (guard.revision === null) {
+          if (row || !batch.operations.some(op => op.rootId === guard.id && op.command.action === "createTask" && !op.command.parentId && op.command.id === guard.id)) await conflict(guard.id);
+        } else if (guard.occurrence) {
+          if (row) await conflict(guard.id);
+          try { await materialize(tx, userId, guard.occurrence, guard.id); }
+          catch (error) {
+            if (error instanceof CoreError && ["CONFLICT", "NOT_FOUND"].includes(error.code)) {
+              if (guard.date) {
+                const ids = await tx.calendar.findMany({where:{userId},select:{id:true}});
+                const end = new Date(Date.parse(guard.date)+86400000).toISOString().slice(0,10);
+                const current = (await virtualAgenda(tx,userId,ids.map(c=>c.id),guard.date,end)).find(item=>item.id===guard.id);
+                if (current) throw new LocalTaskConflict(guard.id,current);
+              }
+              await conflict(guard.id);
+            }
+            throw error;
+          }
+        } else {
+          if (!row || row.parentId || row.kind !== "task" || row.mealStep || row.revision !== guard.revision || row.children.length !== guard.children.length || row.children.some(child => !guard.children.some(old => old.id === child.id && old.revision === child.revision))) await conflict(guard.id);
+        }
+      }
+      const removedIds = new Set<string>();
+      for (const op of batch.operations) {
+        let command = op.command;
+        const id = command.action === "createTask" ? command.parentId : command.id;
+        if (id) {
+          const row = await tx.activity.findFirst({ where: { id, userId, lifecycle: "active" }, include: { mealStep: true } });
+          if (!row || row.kind !== "task" || row.mealStep || (row.parentId ?? row.id) !== op.rootId) throw new CoreError("DEPENDENCY", "La tarea o su relación cambió. Actualiza antes de continuar.");
+          if (command.action === "deleteTask" && !row.parentId) throw new CoreError("INVALID_INPUT", "Borrar principales requiere conexión directa.");
+          command = command.action === "createTask" ? { ...command, expectedParentRevision: row.revision } : { ...command, expectedRevision: row.revision } as CoreCommand;
+        } else if (command.action !== "createTask" || command.id !== op.rootId) throw new CoreError("INVALID_INPUT", "Principal inválida.");
+        // Occurrences were materialized under the same lock. Only the selected instance is modified.
+        const { occurrence: _occurrence, ...applied } = command;
+        // Clock skew must never put a completion in the server's future.
+        const at = new Date(Math.min(Date.parse(op.at), Date.now()));
+        const result = await this.apply(tx, userId, applied as CoreCommand, at);
+        result.removedIds.forEach(id => removedIds.add(id));
+      }
+      const activities = await readActivities(tx, userId, { where: { id: { in: batch.guards.map(g => g.id) }, lifecycle: "active" } });
+      const owner = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { dataRevision: true } });
+      const result: CommandResult = { activities, removedIds: [...removedIds], calendars: [], baseDataRevision: owners[0].dataRevision.toString(), dataRevision: owner.dataRevision.toString() };
+      await tx.commandReceipt.create({ data: { userId, commandId: batch.commandId, action: "syncLocalTasks", payloadHash: hash, result: result as unknown as Prisma.InputJsonValue } });
+      return { ...result, replayed: false };
+    }, { maxWait: 10000, timeout: 25000 });
+  }
 
   async execute(authenticatedUserId: string, raw: unknown): Promise<CommandResult & { replayed: boolean }> {
     const userId = uuid(authenticatedUserId, "Usuario autenticado");
@@ -100,11 +185,11 @@ export class ActivityService {
     }
   }
 
-  private async apply(tx: Tx, userId: string, command: CoreCommand): Promise<CommandResult> {
+  private async apply(tx: Tx, userId: string, command: CoreCommand, actionTime?: Date): Promise<CommandResult> {
     const affected = new Set<string>();
     const removedIds: string[] = [];
     const calendars: CommandResult["calendars"] = [];
-    const now = new Date();
+    const now = actionTime ?? new Date();
     if (command.action === "addSubtasks") {
       const parent = await this.target(tx, userId, command.id, command.expectedRevision);
       if (parent.kind !== "task" || parent.parentId) throw new CoreError("DEPENDENCY", "Solo una tarea principal admite nuevas subtareas; los pasos de cocina se editan desde sus recetas.");

@@ -2,7 +2,7 @@
 
 Aplicación personal de actividades, calendario y Cocina. Inbox, Agenda y comidas usan una base común de actividades con subtareas. Google sirve únicamente para iniciar sesión; la información y el calendario pertenecen a MiAgenda y se guardan en PostgreSQL.
 
-**Estado al 2026-10-08:** reconstrucción del núcleo cerrada para uso diario local en PC. Código de Google Calendar retirado, consolidación y mejora general de rendimiento realizadas; revisión integral con correcciones aplicadas. Los últimos cambios de Cocina tienen 45 comprobaciones aprobadas y revisión visual aceptada por el usuario. Captura rápida global habilitada. Versión local compilada, acceso directo, respaldo cifrado y mantenimiento diario preparados. Primera adaptación móvil y copia local de consulta implementadas; pendientes iPhone real, despliegue y edición sin conexión. Consultar [Uso diario local](docs/USO_DIARIO_LOCAL.md) para abrir, respaldar y recuperar.
+**Estado al 2026-10-08:** núcleo reconstruido y Google Calendar retirado; Google se usa solo para entrar. Inbox, Agenda y Cocina habilitados, con revisión integral previa y ajustes de rendimiento/acomodo. Captura rápida, respaldo y mantenimiento preparados. Primera versión publicada en Vercel y acceso confirmado por el usuario en iPhone. El código incorpora ahora cola local para Inbox y tareas normales, pendiente de publicar y revisar ese nuevo flujo en el dispositivo. Consultar [Uso diario local](docs/USO_DIARIO_LOCAL.md) y [Cambios locales](docs/CAMBIOS_LOCALES.md).
 
 ## Empezar a leer
 
@@ -88,9 +88,9 @@ Eliminar una comida consumida quita su representación sin devolver inventario. 
 1. Usar diariamente en PC y corregir incidencias o preferencias de acomodo que aparezcan. La revisión visual de Cocina quedó aceptada; la [guía manual](docs/REVISION_INTEGRAL.md) sirve para revisiones posteriores.
 2. Primera adaptación móvil implementada; revisar Safari e iPhone real al habilitar acceso público.
 3. Preparar despliegue: medición en el entorno de destino, HTTPS/origen, OAuth, limpieza con la app cerrada, seguridad/dependencias y estrategia de respaldo. La compilación local de producción no equivale a un despliegue público.
-4. [Copia local para consulta](docs/COPIA_LOCAL.md) implementada; pendiente la revisión real de desconexión/iPhone. Después: altas de Inbox y modificaciones con cola sin conexión, dashboard, seguimiento selectivo, widget y módulos Finanzas/Ejercicio. Rutinas con tiempos relativos entre pasos y recurrencia desde el completado siguen siendo ideas por diseñar, no funciones implementadas.
+4. [Copia local y cola de tareas](docs/COPIA_LOCAL.md): Inbox y tareas/subtareas normales, incluidos sus horarios individuales, guardan localmente y se envían manualmente. Pendiente revisar este bloque en iPhone y publicar sus cambios. Series y operaciones de Cocina offline siguen pendientes; dashboard, seguimiento selectivo, widget y módulos Finanzas/Ejercicio son futuros. Rutinas con tiempos relativos y recurrencia desde el completado siguen por diseñar.
 
-La captura rápida «＋ Anotar» está disponible en Inbox, Agenda y Cocina: guarda una tarea sin horario en Inbox y mantiene la pantalla actual. Reutiliza el comando idempotente del núcleo para reintentar sin duplicados; no interpreta fechas escritas en el texto. No hay notificaciones push ni edición offline. Los recordatorios de preparación son actividades programadas.
+La captura rápida «＋ Anotar» está disponible en Inbox, Agenda y Cocina: guarda localmente una tarea sin horario en Inbox y mantiene la pantalla actual. Sincronizar envía cambios con recibos idempotentes; no interpreta fechas escritas en el texto. No hay notificaciones push. Los recordatorios de preparación son actividades programadas y Cocina aún requiere conexión para modificarse.
 
 ## Continuar como persona o agente
 
